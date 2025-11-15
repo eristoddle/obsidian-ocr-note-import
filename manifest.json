@@ -1,0 +1,10 @@
+{
+  "id": "notebook-ocr-plugin",
+  "name": "Notebook OCR Plugin",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Process handwritten field notebook images using OCR and intelligently import extracted text into Obsidian notes with pattern-based routing",
+  "author": "Your Name",
+  "authorUrl": "https://github.com/yourusername/obsidian-notebook-ocr",
+  "isDesktopOnly": false
+}
