@@ -181,13 +181,13 @@
     - If prompt, show modal asking user what to do
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-- [ ] 9. Implement folder monitoring system
-  - [ ] 9.1 Create FolderMonitor class
+- [x] 9. Implement folder monitoring system
+  - [x] 9.1 Create FolderMonitor class
     - Implement constructor with plugin reference
     - Create Set to track processed file paths
     - _Requirements: 8.1, 8.2_
 
-  - [ ] 9.2 Implement monitoring logic
+  - [x] 9.2 Implement monitoring logic
     - Implement start() to begin monitoring with interval
     - Implement stop() to clear interval and cleanup
     - Implement checkForNewImages() to scan folder for new images
@@ -196,13 +196,13 @@
     - Mark images as processed after successful processing
     - _Requirements: 8.2, 8.3, 8.4_
 
-  - [ ] 9.3 Implement processed file handling
+  - [x] 9.3 Implement processed file handling
     - Implement markAsProcessed() to add file to processed set
     - If moveProcessedImages is enabled, move file to processed folder
     - Persist processed file list to plugin data
     - _Requirements: 8.4_
 
-  - [ ] 9.4 Integrate folder monitor with plugin lifecycle
+  - [x] 9.4 Integrate folder monitor with plugin lifecycle
     - Start folder monitor in onload() if enabled in settings
     - Stop folder monitor in onunload()
     - Restart monitor when settings change

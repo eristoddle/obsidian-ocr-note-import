@@ -977,6 +977,233 @@ class ActionExecutor {
 }
 
 /**
+ * FolderMonitor class for monitoring a folder and automatically processing new images
+ */
+class FolderMonitor {
+	private plugin: NotebookOCRPlugin;
+	private intervalId: number | null = null;
+	private processedFiles: Set<string>;
+
+	/**
+	 * Constructor with plugin reference
+	 */
+	constructor(plugin: NotebookOCRPlugin) {
+		this.plugin = plugin;
+		this.processedFiles = new Set<string>();
+	}
+
+	/**
+	 * Get the set of processed files (for persistence)
+	 */
+	getProcessedFiles(): string[] {
+		return Array.from(this.processedFiles);
+	}
+
+	/**
+	 * Set the processed files (for loading from persistence)
+	 */
+	setProcessedFiles(files: string[]): void {
+		this.processedFiles = new Set(files);
+	}
+
+	/**
+	 * Start monitoring the configured folder with the specified interval
+	 */
+	start(folderPath: string, interval: 'hourly' | 'daily'): void {
+		// Stop any existing monitoring
+		this.stop();
+
+		// Convert interval to milliseconds
+		const intervalMs = interval === 'hourly' ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+
+		// Start monitoring
+		console.log(`Starting folder monitoring for ${folderPath} with ${interval} interval`);
+
+		// Check immediately on start
+		this.checkForNewImages(folderPath);
+
+		// Set up interval for periodic checks
+		this.intervalId = window.setInterval(() => {
+			this.checkForNewImages(folderPath);
+		}, intervalMs);
+	}
+
+	/**
+	 * Stop monitoring and cleanup
+	 */
+	stop(): void {
+		if (this.intervalId !== null) {
+			window.clearInterval(this.intervalId);
+			this.intervalId = null;
+			console.log('Folder monitoring stopped');
+		}
+	}
+
+	/**
+	 * Check the monitored folder for new images and process them
+	 */
+	async checkForNewImages(folderPath: string): Promise<void> {
+		try {
+			console.log(`Checking for new images in ${folderPath}`);
+
+			// Get the folder
+			const folder = this.plugin.app.vault.getAbstractFileByPath(normalizePath(folderPath));
+
+			if (!(folder instanceof TFolder)) {
+				console.warn(`Monitored folder not found: ${folderPath}`);
+				return;
+			}
+
+			// Get all files in the folder
+			const files = folder.children.filter(file => file instanceof TFile) as TFile[];
+
+			// Filter for image files that haven't been processed
+			const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+			const newImages = files.filter(file => {
+				const extension = file.extension.toLowerCase();
+				return imageExtensions.includes(extension) && !this.processedFiles.has(file.path);
+			});
+
+			if (newImages.length === 0) {
+				console.log('No new images found');
+				return;
+			}
+
+			console.log(`Found ${newImages.length} new image(s) to process`);
+
+			// Process each new image through the image processing pipeline
+			for (const imageFile of newImages) {
+				try {
+					await this.processImageFile(imageFile);
+					// Mark as processed after successful processing
+					await this.markAsProcessed(imageFile);
+				} catch (error) {
+					console.error(`Error processing ${imageFile.path}:`, error);
+					new Notice(`Failed to process ${imageFile.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+				}
+			}
+
+			if (newImages.length > 0) {
+				new Notice(`Processed ${newImages.length} new image(s) from ${folderPath}`);
+			}
+
+		} catch (error) {
+			console.error('Error checking for new images:', error);
+		}
+	}
+
+	/**
+	 * Process a single image file through the OCR pipeline
+	 */
+	private async processImageFile(imageFile: TFile): Promise<void> {
+		if (!this.plugin.ocrService || !this.plugin.ocrService.isAvailable()) {
+			throw new Error('OCR service is not available');
+		}
+
+		if (!this.plugin.vaultManager || !this.plugin.ruleEngine) {
+			throw new Error('Plugin not fully initialized');
+		}
+
+		// Read image file as ArrayBuffer
+		const imageData = await this.plugin.app.vault.readBinary(imageFile);
+
+		// Pass image data to OCR service
+		const ocrResult = await this.plugin.ocrService.processImage(imageData);
+
+		// Handle OCR errors
+		if (ocrResult.error) {
+			throw new Error(`OCR failed: ${ocrResult.error}`);
+		}
+
+		if (!ocrResult.text || ocrResult.text.trim().length === 0) {
+			throw new Error('No text found in image');
+		}
+
+		// Pass OCR text to rule engine for matching
+		const matches = await this.plugin.ruleEngine.matchAndExecute(ocrResult.text);
+
+		const actionExecutor = new ActionExecutor(this.plugin.vaultManager);
+
+		if (matches.length > 0) {
+			// Execute matched rule actions via ActionExecutor
+			for (const match of matches) {
+				const results = await actionExecutor.executeActions(match);
+
+				// Check if all actions succeeded
+				const allSucceeded = results.every(r => r.success);
+				if (!allSucceeded) {
+					const failedActions = results.filter(r => !r.success);
+					throw new Error(`Some actions failed: ${failedActions.map(r => r.error).join(', ')}`);
+				}
+			}
+		} else {
+			// Apply default action if no rules match
+			await this.plugin['applyDefaultAction'](ocrResult.text, imageFile.name);
+		}
+	}
+
+	/**
+	 * Mark a file as processed and optionally move it to the processed folder
+	 */
+	async markAsProcessed(imageFile: TFile): Promise<void> {
+		// Add file to processed set
+		this.processedFiles.add(imageFile.path);
+
+		// Persist processed file list to plugin data
+		await this.saveProcessedFiles();
+
+		// If moveProcessedImages is enabled, move file to processed folder
+		if (this.plugin.settings.moveProcessedImages) {
+			try {
+				const processedFolderPath = normalizePath(this.plugin.settings.processedImagesFolderPath);
+
+				// Ensure processed folder exists
+				const processedFolder = this.plugin.app.vault.getAbstractFileByPath(processedFolderPath);
+				if (!processedFolder) {
+					await this.plugin.app.vault.createFolder(processedFolderPath);
+				}
+
+				// Generate new path for the file
+				const newPath = normalizePath(`${processedFolderPath}/${imageFile.name}`);
+
+				// Check if file already exists at destination
+				let finalPath = newPath;
+				let counter = 1;
+				while (this.plugin.app.vault.getAbstractFileByPath(finalPath)) {
+					const nameParts = imageFile.name.split('.');
+					const extension = nameParts.pop();
+					const baseName = nameParts.join('.');
+					finalPath = normalizePath(`${processedFolderPath}/${baseName} ${counter}.${extension}`);
+					counter++;
+				}
+
+				// Move the file
+				await this.plugin.app.vault.rename(imageFile, finalPath);
+
+				// Update the processed files set with the new path
+				this.processedFiles.delete(imageFile.path);
+				this.processedFiles.add(finalPath);
+				await this.saveProcessedFiles();
+
+				console.log(`Moved processed image to ${finalPath}`);
+			} catch (error) {
+				console.error('Error moving processed image:', error);
+				// Don't throw - we still want to mark it as processed even if move fails
+			}
+		}
+	}
+
+	/**
+	 * Save the processed files list to plugin data
+	 */
+	private async saveProcessedFiles(): Promise<void> {
+		const data = await this.plugin.loadData() || {};
+		data.processedFiles = Array.from(this.processedFiles);
+		await this.plugin.saveData(data);
+	}
+}
+
+/**
  * Modal for prompting user about default action
  */
 class DefaultActionModal extends Modal {
@@ -1058,6 +1285,7 @@ export default class NotebookOCRPlugin extends Plugin {
 	ocrService: OCRService | null = null;
 	vaultManager: VaultManager | null = null;
 	ruleEngine: RuleEngine | null = null;
+	folderMonitor: FolderMonitor | null = null;
 
 	/**
 	 * Called when the plugin is loaded
@@ -1085,13 +1313,29 @@ export default class NotebookOCRPlugin extends Plugin {
 		this.ruleEngine = new RuleEngine(this.settings.processingRules);
 		console.log('Rule engine initialized');
 
+		// Initialize folder monitor
+		this.folderMonitor = new FolderMonitor(this);
+
+		// Load processed files from plugin data
+		const data = await this.loadData();
+		if (data && data.processedFiles) {
+			this.folderMonitor.setProcessedFiles(data.processedFiles);
+		}
+
+		// Start folder monitor if enabled in settings
+		if (this.settings.folderMonitoringEnabled) {
+			this.folderMonitor.start(
+				this.settings.monitoredFolderPath,
+				this.settings.monitoringInterval
+			);
+		}
+
 		// Add settings tab
 		this.addSettingTab(new NotebookOCRSettingTab(this.app, this));
 
 		// Register commands
 		this.registerCommands();
 
-		// TODO: Initialize folder monitor
 		// TODO: Add ribbon icon
 	}
 
@@ -1319,7 +1563,10 @@ export default class NotebookOCRPlugin extends Plugin {
 			await (this.ocrService as TesseractOCRService).terminate();
 		}
 
-		// TODO: Stop folder monitor
+		// Stop folder monitor
+		if (this.folderMonitor) {
+			this.folderMonitor.stop();
+		}
 	}
 
 	/**
@@ -1444,6 +1691,19 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 				.onChange(async (value) => {
 					this.plugin.settings.folderMonitoringEnabled = value;
 					await this.plugin.saveSettings();
+
+					// Restart monitor when settings change
+					if (this.plugin.folderMonitor) {
+						if (value) {
+							this.plugin.folderMonitor.start(
+								this.plugin.settings.monitoredFolderPath,
+								this.plugin.settings.monitoringInterval
+							);
+						} else {
+							this.plugin.folderMonitor.stop();
+						}
+					}
+
 					this.display(); // Refresh to show/hide monitoring settings
 				}));
 
@@ -1457,6 +1717,14 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.monitoredFolderPath = value;
 						await this.plugin.saveSettings();
+
+						// Restart monitor with new folder path
+						if (this.plugin.folderMonitor && this.plugin.settings.folderMonitoringEnabled) {
+							this.plugin.folderMonitor.start(
+								this.plugin.settings.monitoredFolderPath,
+								this.plugin.settings.monitoringInterval
+							);
+						}
 					}));
 
 			new Setting(containerEl)
@@ -1469,6 +1737,14 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.monitoringInterval = value as 'hourly' | 'daily';
 						await this.plugin.saveSettings();
+
+						// Restart monitor with new interval
+						if (this.plugin.folderMonitor && this.plugin.settings.folderMonitoringEnabled) {
+							this.plugin.folderMonitor.start(
+								this.plugin.settings.monitoredFolderPath,
+								this.plugin.settings.monitoringInterval
+							);
+						}
 					}));
 
 			new Setting(containerEl)
