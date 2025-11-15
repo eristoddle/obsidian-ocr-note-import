@@ -1,4 +1,23 @@
-import { App, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, Notice } from 'obsidian';
+import { createWorker, Worker } from 'tesseract.js';
+
+/**
+ * OCR service interface
+ */
+interface OCRService {
+	initialize(): Promise<void>;
+	processImage(imageData: ArrayBuffer): Promise<OCRResult>;
+	isAvailable(): boolean;
+}
+
+/**
+ * OCR result interface
+ */
+interface OCRResult {
+	text: string;
+	confidence: number;
+	error?: string;
+}
 
 /**
  * Plugin settings interface
@@ -82,6 +101,106 @@ interface ModifyFrontmatterConfig {
 }
 
 /**
+ * Tesseract.js OCR service implementation
+ */
+class TesseractOCRService implements OCRService {
+	private worker: Worker | null = null;
+	private initialized = false;
+
+	/**
+	 * Initialize the Tesseract worker
+	 */
+	async initialize(): Promise<void> {
+		try {
+			this.worker = await createWorker('eng');
+			this.initialized = true;
+			console.log('Tesseract OCR service initialized');
+		} catch (error) {
+			console.error('Failed to initialize Tesseract OCR service:', error);
+			this.initialized = false;
+			throw new Error('Failed to initialize OCR service: ' + error.message);
+		}
+	}
+
+	/**
+	 * Process an image and extract text using OCR
+	 */
+	async processImage(imageData: ArrayBuffer): Promise<OCRResult> {
+		if (!this.initialized || !this.worker) {
+			return {
+				text: '',
+				confidence: 0,
+				error: 'OCR service not initialized'
+			};
+		}
+
+		try {
+			// Convert ArrayBuffer to Uint8Array for Tesseract
+			const imageArray = new Uint8Array(imageData);
+
+			// Perform OCR
+			const result = await this.worker.recognize(imageArray);
+
+			return {
+				text: result.data.text,
+				confidence: result.data.confidence,
+			};
+		} catch (error) {
+			console.error('OCR processing error:', error);
+			return {
+				text: '',
+				confidence: 0,
+				error: 'Failed to process image: ' + error.message
+			};
+		}
+	}
+
+	/**
+	 * Check if the OCR service is available and initialized
+	 */
+	isAvailable(): boolean {
+		return this.initialized && this.worker !== null;
+	}
+
+	/**
+	 * Cleanup the Tesseract worker
+	 */
+	async terminate(): Promise<void> {
+		if (this.worker) {
+			await this.worker.terminate();
+			this.worker = null;
+			this.initialized = false;
+			console.log('Tesseract OCR service terminated');
+		}
+	}
+}
+
+/**
+ * OCR service factory function
+ * Creates and initializes the appropriate OCR service based on settings
+ */
+async function createOCRService(settings: PluginSettings): Promise<OCRService> {
+	let service: OCRService;
+
+	if (settings.ocrBackend === 'cloud') {
+		// Cloud OCR not yet implemented
+		console.warn('Cloud OCR backend not yet implemented, falling back to Tesseract');
+		service = new TesseractOCRService();
+	} else {
+		// Use Tesseract.js for local OCR
+		service = new TesseractOCRService();
+	}
+
+	try {
+		await service.initialize();
+		return service;
+	} catch (error) {
+		console.error('Failed to initialize OCR service:', error);
+		throw error;
+	}
+}
+
+/**
  * Default plugin settings
  */
 const DEFAULT_SETTINGS: PluginSettings = {
@@ -104,6 +223,7 @@ const DEFAULT_SETTINGS: PluginSettings = {
  */
 export default class NotebookOCRPlugin extends Plugin {
 	settings: PluginSettings;
+	ocrService: OCRService | null = null;
 
 	/**
 	 * Called when the plugin is loaded
@@ -114,10 +234,18 @@ export default class NotebookOCRPlugin extends Plugin {
 		// Load settings
 		await this.loadSettings();
 
+		// Initialize OCR service
+		try {
+			this.ocrService = await createOCRService(this.settings);
+			console.log('OCR service initialized successfully');
+		} catch (error) {
+			console.error('Failed to initialize OCR service:', error);
+			new Notice('Failed to initialize OCR service. Please check console for details.');
+		}
+
 		// Add settings tab
 		this.addSettingTab(new NotebookOCRSettingTab(this.app, this));
 
-		// TODO: Initialize OCR service
 		// TODO: Initialize rule engine
 		// TODO: Initialize vault manager
 		// TODO: Initialize folder monitor
@@ -128,11 +256,15 @@ export default class NotebookOCRPlugin extends Plugin {
 	/**
 	 * Called when the plugin is unloaded
 	 */
-	onunload() {
+	async onunload() {
 		console.log('Unloading Notebook OCR Plugin');
 
+		// Cleanup OCR service
+		if (this.ocrService && this.ocrService instanceof TesseractOCRService) {
+			await (this.ocrService as TesseractOCRService).terminate();
+		}
+
 		// TODO: Stop folder monitor
-		// TODO: Cleanup OCR service
 	}
 
 	/**

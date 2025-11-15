@@ -51,20 +51,20 @@
     - Add text input for processed images folder path
     - _Requirements: 8.1, 8.2, 8.4, 8.5_
 
-- [ ] 4. Implement OCR service layer
-  - [ ] 4.1 Create OCR service interfaces
+- [x] 4. Implement OCR service layer
+  - [x] 4.1 Create OCR service interfaces
     - Define OCRService interface with initialize, processImage, isAvailable methods
     - Define OCRResult interface
     - _Requirements: 1.2_
 
-  - [ ] 4.2 Implement Tesseract.js OCR service
+  - [x] 4.2 Implement Tesseract.js OCR service
     - Create TesseractOCRService class implementing OCRService
     - Implement initialize() to load Tesseract worker
     - Implement processImage() to convert image buffer to text
     - Handle errors and return OCRResult with confidence score
     - _Requirements: 1.2, 1.5_
 
-  - [ ] 4.3 Create OCR service factory
+  - [x] 4.3 Create OCR service factory
     - Implement factory function to create appropriate OCR service based on settings
     - Handle service initialization and error cases
     - _Requirements: 1.2_
