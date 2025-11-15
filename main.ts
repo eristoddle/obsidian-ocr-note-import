@@ -21,6 +21,113 @@ class PlatformHelper {
 }
 
 /**
+ * ErrorHandler class for handling different types of errors with user-friendly messages
+ */
+class ErrorHandler {
+	/**
+	 * Handle OCR-related errors and show user-friendly messages
+	 */
+	static handleOCRError(error: Error, imagePath: string): void {
+		console.error(`OCR error for ${imagePath}:`, error);
+
+		let userMessage = `Failed to process image "${imagePath}"`;
+
+		// Provide specific error messages based on error type
+		if (error.message.includes('not initialized')) {
+			userMessage += ': OCR service not initialized. Please check plugin settings.';
+		} else if (error.message.includes('Failed to initialize')) {
+			userMessage += ': Could not initialize OCR engine. Please reload the plugin.';
+		} else if (error.message.includes('No text found')) {
+			userMessage += ': No text detected in image. The image may be blank or too low quality.';
+		} else if (error.message.includes('timeout')) {
+			userMessage += ': OCR processing timed out. Try with a smaller or clearer image.';
+		} else if (error.message.includes('memory')) {
+			userMessage += ': Insufficient memory to process image. Try with a smaller image.';
+		} else {
+			userMessage += `: ${error.message}`;
+		}
+
+		new Notice(userMessage, 8000);
+	}
+
+	/**
+	 * Handle rule execution errors and log them appropriately
+	 */
+	static handleRuleError(error: Error, rule: ProcessingRule, action?: RuleAction): void {
+		const actionType = action ? ` (${action.type})` : '';
+		console.error(`Rule execution error for "${rule.name}"${actionType}:`, error);
+
+		let userMessage = `Rule "${rule.name}" failed${actionType}`;
+
+		// Provide specific error messages based on error type
+		if (error.message.includes('Target note not found')) {
+			userMessage += ': Target note does not exist. Check the note path in your rule configuration.';
+		} else if (error.message.includes('Invalid regex')) {
+			userMessage += ': Invalid regex pattern. Please check your pattern syntax.';
+		} else if (error.message.includes('Folder not found')) {
+			userMessage += ': Target folder does not exist. It will be created automatically.';
+		} else if (error.message.includes('frontmatter')) {
+			userMessage += ': Failed to modify frontmatter. Check the note format.';
+		} else if (error.message.includes('permission')) {
+			userMessage += ': Permission denied. Check file permissions.';
+		} else {
+			userMessage += `: ${error.message}`;
+		}
+
+		new Notice(userMessage, 6000);
+	}
+
+	/**
+	 * Handle file system operation errors
+	 */
+	static handleFileSystemError(error: Error, operation: string, filePath?: string): void {
+		const fileInfo = filePath ? ` for "${filePath}"` : '';
+		console.error(`File system error during ${operation}${fileInfo}:`, error);
+
+		let userMessage = `Failed to ${operation}${fileInfo}`;
+
+		// Provide specific error messages based on error type
+		if (error.message.includes('ENOENT') || error.message.includes('not found')) {
+			userMessage += ': File or folder not found.';
+		} else if (error.message.includes('EACCES') || error.message.includes('permission')) {
+			userMessage += ': Permission denied. Check file permissions.';
+		} else if (error.message.includes('EEXIST') || error.message.includes('already exists')) {
+			userMessage += ': File already exists.';
+		} else if (error.message.includes('ENOSPC') || error.message.includes('space')) {
+			userMessage += ': Insufficient disk space.';
+		} else if (error.message.includes('EROFS') || error.message.includes('read-only')) {
+			userMessage += ': File system is read-only.';
+		} else {
+			userMessage += `: ${error.message}`;
+		}
+
+		new Notice(userMessage, 6000);
+	}
+
+	/**
+	 * Handle validation errors with helpful suggestions
+	 */
+	static handleValidationError(message: string, suggestion?: string): void {
+		console.warn('Validation error:', message);
+
+		let userMessage = message;
+		if (suggestion) {
+			userMessage += ` ${suggestion}`;
+		}
+
+		new Notice(userMessage, 5000);
+	}
+
+	/**
+	 * Show a warning message to the user
+	 */
+	static showWarning(message: string, duration: number = 5000): void {
+		console.warn(message);
+		new Notice(message, duration);
+	}
+}
+
+/**
  * OCR service interface
  */
 interface OCRService {
@@ -327,8 +434,20 @@ class VaultManager {
 		frontmatter: Record<string, any>,
 		body: string
 	): Promise<TFile> {
+		// Validate title
+		if (!title || title.trim().length === 0) {
+			throw new Error('Note title cannot be empty');
+		}
+
 		// Normalize folder path
 		const normalizedFolder = normalizePath(folderPath);
+
+		// Check if folder exists, warn and create if needed
+		const folderExists = this.vault.getAbstractFileByPath(normalizedFolder);
+		if (!folderExists && normalizedFolder) {
+			console.log(`Creating folder: ${normalizedFolder}`);
+			ErrorHandler.showWarning(`Folder "${normalizedFolder}" does not exist. Creating it now.`, 4000);
+		}
 
 		// Ensure folder exists
 		await this.ensureFolderExists(normalizedFolder);
@@ -338,7 +457,11 @@ class VaultManager {
 		let filePath = normalizedFolder ? `${normalizedFolder}/${fileName}` : fileName;
 
 		// Handle duplicate filenames
+		const originalPath = filePath;
 		filePath = await this.getUniqueFilePath(filePath);
+		if (filePath !== originalPath) {
+			console.log(`File already exists, using unique name: ${filePath}`);
+		}
 
 		// Build frontmatter content
 		let content = '';
@@ -370,8 +493,14 @@ class VaultManager {
 		content: string,
 		insertionPoint: InsertionPoint
 	): Promise<void> {
+		// Validate target path
+		if (!targetPath || targetPath.trim().length === 0) {
+			throw new Error('Target note path cannot be empty');
+		}
+
 		const file = this.vault.getAbstractFileByPath(targetPath);
 		if (!(file instanceof TFile)) {
+			ErrorHandler.showWarning(`Target note "${targetPath}" does not exist. Content insertion skipped.`);
 			throw new Error(`Target note not found: ${targetPath}`);
 		}
 
@@ -394,7 +523,9 @@ class VaultManager {
 						lines.splice(index, 0, content, '');
 						fileContent = lines.join('\n');
 					} else {
-						// Pattern not found, append to end
+						// Pattern not found, append to end with warning
+						console.warn(`Pattern "${insertionPoint.pattern}" not found in ${targetPath}, appending to end`);
+						ErrorHandler.showWarning(`Pattern not found in note. Content appended to end instead.`, 4000);
 						fileContent = fileContent + '\n\n' + content;
 					}
 				}
@@ -408,7 +539,9 @@ class VaultManager {
 						lines.splice(index + 1, 0, '', content);
 						fileContent = lines.join('\n');
 					} else {
-						// Pattern not found, append to end
+						// Pattern not found, append to end with warning
+						console.warn(`Pattern "${insertionPoint.pattern}" not found in ${targetPath}, appending to end`);
+						ErrorHandler.showWarning(`Pattern not found in note. Content appended to end instead.`, 4000);
 						fileContent = fileContent + '\n\n' + content;
 					}
 				}
@@ -431,7 +564,9 @@ class VaultManager {
 						lines.splice(insertIndex, 0, content, '');
 						fileContent = lines.join('\n');
 					} else {
-						// Heading not found, create it and add content
+						// Heading not found, create it and add content with warning
+						console.warn(`Heading "${insertionPoint.heading}" not found in ${targetPath}, creating it`);
+						ErrorHandler.showWarning(`Heading not found in note. Creating it now.`, 4000);
 						fileContent += `\n${insertionPoint.heading}\n\n${content}\n`;
 					}
 				}
@@ -767,6 +902,60 @@ class RuleEngine {
 
 		return rendered;
 	}
+
+	/**
+	 * Validate template syntax
+	 */
+	static validateTemplate(template: string): { valid: boolean; error?: string; warnings?: string[] } {
+		if (!template || template.trim().length === 0) {
+			return { valid: true };
+		}
+
+		const warnings: string[] = [];
+
+		// Check for malformed placeholders
+		const malformedPattern = /\{\{(?!\d+\}\})[^}]*\}\}/g;
+		const malformed = template.match(malformedPattern);
+		if (malformed) {
+			return {
+				valid: false,
+				error: `Malformed placeholder(s) found: ${malformed.join(', ')}. Use {{1}}, {{2}}, etc.`
+			};
+		}
+
+		// Check for unclosed placeholders
+		const unclosedOpen = (template.match(/\{\{/g) || []).length;
+		const unclosedClose = (template.match(/\}\}/g) || []).length;
+		if (unclosedOpen !== unclosedClose) {
+			return {
+				valid: false,
+				error: 'Unclosed placeholder braces found. Make sure all {{ have matching }}'
+			};
+		}
+
+		// Extract all placeholder numbers
+		const placeholderPattern = /\{\{(\d+)\}\}/g;
+		const matches = [...template.matchAll(placeholderPattern)];
+		const placeholderNumbers = matches.map(m => parseInt(m[1]));
+
+		// Warn about high placeholder numbers (might indicate typo)
+		const maxPlaceholder = Math.max(...placeholderNumbers, 0);
+		if (maxPlaceholder > 10) {
+			warnings.push(`High placeholder number detected ({{${maxPlaceholder}}}). Make sure this is intentional.`);
+		}
+
+		// Warn about gaps in placeholder sequence
+		if (placeholderNumbers.length > 0) {
+			const uniqueNumbers = [...new Set(placeholderNumbers)].sort((a, b) => a - b);
+			for (let i = 1; i < uniqueNumbers[uniqueNumbers.length - 1]; i++) {
+				if (!uniqueNumbers.includes(i)) {
+					warnings.push(`Placeholder {{${i}}} is missing but higher numbers are used.`);
+				}
+			}
+		}
+
+		return { valid: true, warnings: warnings.length > 0 ? warnings : undefined };
+	}
 }
 
 /**
@@ -1074,6 +1263,7 @@ class FolderMonitor {
 
 			if (!(folder instanceof TFolder)) {
 				console.warn(`Monitored folder not found: ${folderPath}`);
+				ErrorHandler.showWarning(`Monitored folder "${folderPath}" not found. Please check your settings.`);
 				return;
 			}
 
@@ -1094,24 +1284,48 @@ class FolderMonitor {
 
 			console.log(`Found ${newImages.length} new image(s) to process`);
 
+			// Show initial progress notification
+			new Notice(`Found ${newImages.length} new image${newImages.length > 1 ? 's' : ''} in ${folderPath}. Processing...`);
+
+			let successCount = 0;
+			let errorCount = 0;
+
 			// Process each new image through the image processing pipeline
 			for (const imageFile of newImages) {
 				try {
 					await this.processImageFile(imageFile);
 					// Mark as processed after successful processing
 					await this.markAsProcessed(imageFile);
+					successCount++;
 				} catch (error) {
 					console.error(`Error processing ${imageFile.path}:`, error);
-					new Notice(`Failed to process ${imageFile.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+					ErrorHandler.handleOCRError(
+						error instanceof Error ? error : new Error('Unknown error'),
+						imageFile.name
+					);
+					errorCount++;
 				}
 			}
 
-			if (newImages.length > 0) {
-				new Notice(`Processed ${newImages.length} new image(s) from ${folderPath}`);
+			// Show summary notification
+			if (successCount > 0 || errorCount > 0) {
+				const summaryParts = [];
+				if (successCount > 0) {
+					summaryParts.push(`✓ ${successCount} processed`);
+				}
+				if (errorCount > 0) {
+					summaryParts.push(`✗ ${errorCount} failed`);
+				}
+				new Notice(`Folder monitoring complete: ${summaryParts.join(', ')}`, 8000);
 			}
 
 		} catch (error) {
 			console.error('Error checking for new images:', error);
+			ErrorHandler.handleFileSystemError(
+				error instanceof Error ? error : new Error('Unknown error'),
+				'check monitored folder',
+				folderPath
+			);
 		}
 	}
 
@@ -1156,6 +1370,14 @@ class FolderMonitor {
 				const allSucceeded = results.every(r => r.success);
 				if (!allSucceeded) {
 					const failedActions = results.filter(r => !r.success);
+					// Use ErrorHandler for better error messages
+					failedActions.forEach(result => {
+						ErrorHandler.handleRuleError(
+							new Error(result.error || 'Unknown error'),
+							match.rule,
+							result.action
+						);
+					});
 					throw new Error(`Some actions failed: ${failedActions.map(r => r.error).join(', ')}`);
 				}
 			}
@@ -1498,25 +1720,41 @@ export default class NotebookOCRPlugin extends Plugin {
 	 */
 	private async processImages(files: File[]): Promise<void> {
 		if (!this.ocrService || !this.ocrService.isAvailable()) {
-			new Notice('OCR service is not available. Please check plugin settings.');
+			ErrorHandler.handleValidationError(
+				'OCR service is not available.',
+				'Please check plugin settings and ensure the OCR engine is properly initialized.'
+			);
 			return;
 		}
 
 		if (!this.vaultManager || !this.ruleEngine) {
-			new Notice('Plugin not fully initialized. Please reload Obsidian.');
+			ErrorHandler.handleValidationError(
+				'Plugin not fully initialized.',
+				'Please reload Obsidian and try again.'
+			);
 			return;
 		}
 
-		// Show initial notice
-		new Notice(`Processing ${files.length} image${files.length > 1 ? 's' : ''}...`);
+		// Show initial notice with progress
+		const totalFiles = files.length;
+		new Notice(`Starting OCR processing for ${totalFiles} image${totalFiles > 1 ? 's' : ''}...`);
 
 		let successCount = 0;
 		let errorCount = 0;
 		const actionExecutor = new ActionExecutor(this.vaultManager);
+		const actionsSummary: string[] = [];
 
 		// Process each image
-		for (const file of files) {
+		for (let i = 0; i < files.length; i++) {
+			const file = files[i];
+			const fileNumber = i + 1;
+
 			try {
+				// Show progress for multiple images
+				if (totalFiles > 1) {
+					new Notice(`Processing image ${fileNumber}/${totalFiles}: ${file.name}...`);
+				}
+
 				// Read image file as ArrayBuffer
 				const imageData = await file.arrayBuffer();
 
@@ -1525,13 +1763,13 @@ export default class NotebookOCRPlugin extends Plugin {
 
 				// Handle OCR errors
 				if (ocrResult.error) {
-					new Notice(`OCR failed for ${file.name}: ${ocrResult.error}`);
+					ErrorHandler.handleOCRError(new Error(ocrResult.error), file.name);
 					errorCount++;
 					continue;
 				}
 
 				if (!ocrResult.text || ocrResult.text.trim().length === 0) {
-					new Notice(`No text found in ${file.name}`);
+					ErrorHandler.handleOCRError(new Error('No text found in image'), file.name);
 					errorCount++;
 					continue;
 				}
@@ -1548,35 +1786,64 @@ export default class NotebookOCRPlugin extends Plugin {
 						const allSucceeded = results.every(r => r.success);
 						if (allSucceeded) {
 							successCount++;
+							// Track what actions were taken
+							const actionTypes = results.map(r => {
+								if (r.action.type === 'create-note' && r.createdFile) {
+									return `created note "${r.createdFile.basename}"`;
+								}
+								return r.action.type.replace('-', ' ');
+							});
+							actionsSummary.push(`${file.name}: ${actionTypes.join(', ')}`);
 						} else {
 							errorCount++;
 							const failedActions = results.filter(r => !r.success);
-							new Notice(`Some actions failed for ${file.name}: ${failedActions.map(r => r.error).join(', ')}`);
+							failedActions.forEach(result => {
+								ErrorHandler.handleRuleError(
+									new Error(result.error || 'Unknown error'),
+									match.rule,
+									result.action
+								);
+							});
 						}
 					}
 				} else {
 					// Apply default action if no rules match
 					await this.applyDefaultAction(ocrResult.text, file.name);
 					successCount++;
+					actionsSummary.push(`${file.name}: applied default action`);
 				}
 
 			} catch (error) {
 				console.error(`Error processing image ${file.name}:`, error);
-				new Notice(`Error processing ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+				ErrorHandler.handleOCRError(
+					error instanceof Error ? error : new Error('Unknown error'),
+					file.name
+				);
 				errorCount++;
 			}
 		}
 
-		// Display success notification with summary
+		// Display success notification with summary of actions taken
 		if (successCount > 0 || errorCount > 0) {
-			const summary = [];
+			const summaryParts = [];
 			if (successCount > 0) {
-				summary.push(`${successCount} processed successfully`);
+				summaryParts.push(`✓ ${successCount} processed successfully`);
 			}
 			if (errorCount > 0) {
-				summary.push(`${errorCount} failed`);
+				summaryParts.push(`✗ ${errorCount} failed`);
 			}
-			new Notice(`Image processing complete: ${summary.join(', ')}`);
+
+			let summaryMessage = `Image processing complete: ${summaryParts.join(', ')}`;
+
+			// Add details about actions taken (limit to first 3 for brevity)
+			if (actionsSummary.length > 0 && actionsSummary.length <= 3) {
+				summaryMessage += '\n\nActions taken:\n' + actionsSummary.map(s => `• ${s}`).join('\n');
+			} else if (actionsSummary.length > 3) {
+				summaryMessage += `\n\n${actionsSummary.length} actions completed. Check console for details.`;
+				console.log('Actions summary:', actionsSummary);
+			}
+
+			new Notice(summaryMessage, 10000);
 		}
 	}
 
@@ -1875,25 +2142,137 @@ class RuleEditorModal extends Modal {
 		saveButton.addEventListener('click', async () => {
 			// Validate before saving
 			if (!this.workingRule.name.trim()) {
-				new Notice('Please enter a rule name');
+				ErrorHandler.handleValidationError('Please enter a rule name.');
 				return;
 			}
 
 			if (!this.workingRule.pattern.trim()) {
-				new Notice('Please enter a pattern');
+				ErrorHandler.handleValidationError('Please enter a pattern.');
 				return;
 			}
 
 			// Validate regex
 			const validation = this.plugin.ruleEngine?.validateRegex(this.workingRule.pattern);
 			if (validation && !validation.valid) {
-				new Notice(`Invalid regex pattern: ${validation.error}`);
+				ErrorHandler.handleValidationError(
+					`Invalid regex pattern: ${validation.error}`,
+					'Please check your pattern syntax.'
+				);
 				return;
+			}
+
+			// Validate that at least one action is configured
+			if (this.workingRule.actions.length === 0) {
+				ErrorHandler.handleValidationError(
+					'No actions configured.',
+					'Please add at least one action to this rule.'
+				);
+				return;
+			}
+
+			// Validate each action's configuration
+			for (let i = 0; i < this.workingRule.actions.length; i++) {
+				const action = this.workingRule.actions[i];
+				const actionNum = i + 1;
+
+				if (action.type === 'create-note') {
+					const config = action.config as CreateNoteConfig;
+					if (!config.titleTemplate.trim()) {
+						ErrorHandler.handleValidationError(
+							`Action ${actionNum}: Title template is required for create-note actions.`
+						);
+						return;
+					}
+					// Validate title template syntax
+					const titleValidation = RuleEngine.validateTemplate(config.titleTemplate);
+					if (!titleValidation.valid) {
+						ErrorHandler.handleValidationError(
+							`Action ${actionNum}: Invalid title template - ${titleValidation.error}`
+						);
+						return;
+					}
+					if (titleValidation.warnings) {
+						titleValidation.warnings.forEach(warning => {
+							console.warn(`Action ${actionNum} title template: ${warning}`);
+						});
+					}
+					// Validate body template syntax
+					if (config.bodyTemplate) {
+						const bodyValidation = RuleEngine.validateTemplate(config.bodyTemplate);
+						if (!bodyValidation.valid) {
+							ErrorHandler.handleValidationError(
+								`Action ${actionNum}: Invalid body template - ${bodyValidation.error}`
+							);
+							return;
+						}
+					}
+				} else if (action.type === 'insert-content') {
+					const config = action.config as InsertContentConfig;
+					if (!config.targetNote.trim()) {
+						ErrorHandler.handleValidationError(
+							`Action ${actionNum}: Target note is required for insert-content actions.`
+						);
+						return;
+					}
+					// Validate target note template syntax
+					const targetValidation = RuleEngine.validateTemplate(config.targetNote);
+					if (!targetValidation.valid) {
+						ErrorHandler.handleValidationError(
+							`Action ${actionNum}: Invalid target note template - ${targetValidation.error}`
+						);
+						return;
+					}
+					if (!config.contentTemplate.trim()) {
+						ErrorHandler.handleValidationError(
+							`Action ${actionNum}: Content template is required for insert-content actions.`
+						);
+						return;
+					}
+					// Validate content template syntax
+					const contentValidation = RuleEngine.validateTemplate(config.contentTemplate);
+					if (!contentValidation.valid) {
+						ErrorHandler.handleValidationError(
+							`Action ${actionNum}: Invalid content template - ${contentValidation.error}`
+						);
+						return;
+					}
+					// Validate insertion point configuration
+					if (config.insertionPoint.type === 'before-pattern' || config.insertionPoint.type === 'after-pattern') {
+						if (!config.insertionPoint.pattern || !config.insertionPoint.pattern.trim()) {
+							ErrorHandler.handleValidationError(
+								`Action ${actionNum}: Pattern is required for ${config.insertionPoint.type} insertion point.`
+							);
+							return;
+						}
+					}
+					if (config.insertionPoint.type === 'under-heading') {
+						if (!config.insertionPoint.heading || !config.insertionPoint.heading.trim()) {
+							ErrorHandler.handleValidationError(
+								`Action ${actionNum}: Heading is required for under-heading insertion point.`
+							);
+							return;
+						}
+					}
+				} else if (action.type === 'modify-frontmatter') {
+					const config = action.config as ModifyFrontmatterConfig;
+					if (!config.targetNote.trim()) {
+						ErrorHandler.handleValidationError(
+							`Action ${actionNum}: Target note is required for modify-frontmatter actions.`
+						);
+						return;
+					}
+					if (Object.keys(config.properties).length === 0) {
+						ErrorHandler.handleValidationError(
+							`Action ${actionNum}: At least one property is required for modify-frontmatter actions.`
+						);
+						return;
+					}
+				}
 			}
 
 			// Save the rule
 			await this.onSave(this.workingRule);
-			new Notice(`Rule "${this.workingRule.name}" saved successfully`);
+			new Notice(`✓ Rule "${this.workingRule.name}" saved successfully`);
 			this.close();
 		});
 
