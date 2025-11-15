@@ -8,42 +8,42 @@
   - Implement basic onload/onunload lifecycle methods
   - _Requirements: 1.1, 1.2_
 
-- [ ] 2. Implement settings system and data models
-  - [ ] 2.1 Create settings interface and default settings object
+- [x] 2. Implement settings system and data models
+  - [x] 2.1 Create settings interface and default settings object
     - Define PluginSettings interface with all configuration options
     - Create DEFAULT_SETTINGS constant
     - _Requirements: 2.1, 3.1, 7.2, 8.1_
 
-  - [ ] 2.2 Create data models for processing rules and actions
+  - [x] 2.2 Create data models for processing rules and actions
     - Define ProcessingRule, RuleAction, and ActionConfig interfaces
     - Define CreateNoteConfig, InsertContentConfig, ModifyFrontmatterConfig interfaces
     - Define InsertionPoint interface
     - _Requirements: 3.1, 3.2, 4.1, 5.1, 6.1_
 
-  - [ ] 2.3 Implement settings persistence
+  - [x] 2.3 Implement settings persistence
     - Implement loadSettings() method
     - Implement saveSettings() method
     - _Requirements: 2.1_
 
-- [ ] 3. Create basic settings UI
-  - [ ] 3.1 Implement settings tab class
+- [x] 3. Create basic settings UI
+  - [x] 3.1 Implement settings tab class
     - Create PluginSettingTab class extending Obsidian's PluginSettingTab
     - Implement display() method with container setup
     - _Requirements: 2.1, 3.1_
 
-  - [ ] 3.2 Add OCR backend settings controls
+  - [x] 3.2 Add OCR backend settings controls
     - Add dropdown for OCR backend selection (tesseract/cloud)
     - Add text input for cloud API key (conditionally shown)
     - Add dropdown for cloud provider selection
     - _Requirements: 1.1_
 
-  - [ ] 3.3 Add daily note settings controls
+  - [x] 3.3 Add daily note settings controls
     - Add text input for daily note import heading
     - Add dropdown for default action selection
     - Add text input for note separator pattern
     - _Requirements: 2.1, 7.2, 7.3_
 
-  - [ ] 3.4 Add folder monitoring settings controls
+  - [x] 3.4 Add folder monitoring settings controls
     - Add toggle for folder monitoring enabled/disabled
     - Add text input for monitored folder path
     - Add dropdown for monitoring interval
