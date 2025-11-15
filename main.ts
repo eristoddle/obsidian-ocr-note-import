@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, TFolder, Vault, normalizePath } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, TFolder, Vault, normalizePath, Modal } from 'obsidian';
 import { createWorker, Worker } from 'tesseract.js';
 
 /**
@@ -977,6 +977,62 @@ class ActionExecutor {
 }
 
 /**
+ * Modal for prompting user about default action
+ */
+class DefaultActionModal extends Modal {
+	private text: string;
+	private fileName: string;
+	private onChoose: (action: string) => Promise<void>;
+
+	constructor(app: App, text: string, fileName: string, onChoose: (action: string) => Promise<void>) {
+		super(app);
+		this.text = text;
+		this.fileName = fileName;
+		this.onChoose = onChoose;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+
+		contentEl.createEl('h2', { text: 'No matching rules found' });
+		contentEl.createEl('p', { text: `What would you like to do with the text from ${this.fileName}?` });
+
+		// Show preview of text
+		const previewEl = contentEl.createEl('div', { cls: 'ocr-text-preview' });
+		previewEl.style.maxHeight = '200px';
+		previewEl.style.overflow = 'auto';
+		previewEl.style.padding = '10px';
+		previewEl.style.border = '1px solid var(--background-modifier-border)';
+		previewEl.style.marginBottom = '20px';
+		previewEl.style.whiteSpace = 'pre-wrap';
+		previewEl.textContent = this.text.substring(0, 500) + (this.text.length > 500 ? '...' : '');
+
+		// Add buttons
+		const buttonContainer = contentEl.createEl('div', { cls: 'modal-button-container' });
+		buttonContainer.style.display = 'flex';
+		buttonContainer.style.gap = '10px';
+		buttonContainer.style.justifyContent = 'flex-end';
+
+		const dailyNoteBtn = buttonContainer.createEl('button', { text: 'Insert into Daily Note' });
+		dailyNoteBtn.addEventListener('click', async () => {
+			await this.onChoose('daily-note');
+			this.close();
+		});
+
+		const discardBtn = buttonContainer.createEl('button', { text: 'Discard' });
+		discardBtn.addEventListener('click', async () => {
+			await this.onChoose('discard');
+			this.close();
+		});
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
+/**
  * Default plugin settings
  */
 const DEFAULT_SETTINGS: PluginSettings = {
@@ -1032,9 +1088,224 @@ export default class NotebookOCRPlugin extends Plugin {
 		// Add settings tab
 		this.addSettingTab(new NotebookOCRSettingTab(this.app, this));
 
+		// Register commands
+		this.registerCommands();
+
 		// TODO: Initialize folder monitor
-		// TODO: Register commands
 		// TODO: Add ribbon icon
+	}
+
+	/**
+	 * Register plugin commands
+	 */
+	private registerCommands(): void {
+		// Add command to import from notebook images
+		this.addCommand({
+			id: 'import-notebook-images',
+			name: 'Import from notebook images',
+			callback: () => this.openImagePicker()
+		});
+	}
+
+	/**
+	 * Open file picker for image selection
+	 */
+	private async openImagePicker(): Promise<void> {
+		// Create a file input element
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = 'image/jpeg,image/jpg,image/png,image/gif,image/bmp,image/webp';
+		input.multiple = true;
+
+		// Handle file selection
+		input.onchange = async (e: Event) => {
+			const target = e.target as HTMLInputElement;
+			const files = target.files;
+
+			if (files && files.length > 0) {
+				await this.processImages(Array.from(files));
+			}
+		};
+
+		// Trigger the file picker
+		input.click();
+	}
+
+	/**
+	 * Process selected images through the OCR pipeline
+	 */
+	private async processImages(files: File[]): Promise<void> {
+		if (!this.ocrService || !this.ocrService.isAvailable()) {
+			new Notice('OCR service is not available. Please check plugin settings.');
+			return;
+		}
+
+		if (!this.vaultManager || !this.ruleEngine) {
+			new Notice('Plugin not fully initialized. Please reload Obsidian.');
+			return;
+		}
+
+		// Show initial notice
+		new Notice(`Processing ${files.length} image${files.length > 1 ? 's' : ''}...`);
+
+		let successCount = 0;
+		let errorCount = 0;
+		const actionExecutor = new ActionExecutor(this.vaultManager);
+
+		// Process each image
+		for (const file of files) {
+			try {
+				// Read image file as ArrayBuffer
+				const imageData = await file.arrayBuffer();
+
+				// Pass image data to OCR service
+				const ocrResult = await this.ocrService.processImage(imageData);
+
+				// Handle OCR errors
+				if (ocrResult.error) {
+					new Notice(`OCR failed for ${file.name}: ${ocrResult.error}`);
+					errorCount++;
+					continue;
+				}
+
+				if (!ocrResult.text || ocrResult.text.trim().length === 0) {
+					new Notice(`No text found in ${file.name}`);
+					errorCount++;
+					continue;
+				}
+
+				// Pass OCR text to rule engine for matching
+				const matches = await this.ruleEngine.matchAndExecute(ocrResult.text);
+
+				if (matches.length > 0) {
+					// Execute matched rule actions via ActionExecutor
+					for (const match of matches) {
+						const results = await actionExecutor.executeActions(match);
+
+						// Check if all actions succeeded
+						const allSucceeded = results.every(r => r.success);
+						if (allSucceeded) {
+							successCount++;
+						} else {
+							errorCount++;
+							const failedActions = results.filter(r => !r.success);
+							new Notice(`Some actions failed for ${file.name}: ${failedActions.map(r => r.error).join(', ')}`);
+						}
+					}
+				} else {
+					// Apply default action if no rules match
+					await this.applyDefaultAction(ocrResult.text, file.name);
+					successCount++;
+				}
+
+			} catch (error) {
+				console.error(`Error processing image ${file.name}:`, error);
+				new Notice(`Error processing ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+				errorCount++;
+			}
+		}
+
+		// Display success notification with summary
+		if (successCount > 0 || errorCount > 0) {
+			const summary = [];
+			if (successCount > 0) {
+				summary.push(`${successCount} processed successfully`);
+			}
+			if (errorCount > 0) {
+				summary.push(`${errorCount} failed`);
+			}
+			new Notice(`Image processing complete: ${summary.join(', ')}`);
+		}
+	}
+
+	/**
+	 * Apply default action when no processing rules match
+	 */
+	private async applyDefaultAction(text: string, fileName: string): Promise<void> {
+		if (!this.vaultManager) {
+			throw new Error('Vault manager not initialized');
+		}
+
+		// Check settings for default action type
+		switch (this.settings.defaultAction) {
+			case 'daily-note':
+				// Insert into daily note with separator formatting
+				await this.insertIntoDailyNoteWithSeparators(text);
+				break;
+
+			case 'discard':
+				// Skip processing
+				console.log(`Discarding OCR text from ${fileName} (no rules matched)`);
+				break;
+
+			case 'prompt':
+				// Show modal asking user what to do
+				await this.promptUserForAction(text, fileName);
+				break;
+
+			default:
+				console.warn(`Unknown default action: ${this.settings.defaultAction}`);
+				break;
+		}
+	}
+
+	/**
+	 * Insert text into daily note with separator formatting
+	 */
+	private async insertIntoDailyNoteWithSeparators(text: string): Promise<void> {
+		if (!this.vaultManager) {
+			throw new Error('Vault manager not initialized');
+		}
+
+		// Check if note separator pattern is configured
+		if (this.settings.noteSeparatorPattern) {
+			try {
+				const separatorRegex = new RegExp(this.settings.noteSeparatorPattern, 'gm');
+				const lines = text.split('\n');
+				const formattedLines: string[] = [];
+
+				// Format each line that matches the separator pattern as a bullet
+				for (const line of lines) {
+					if (separatorRegex.test(line)) {
+						// Remove the separator prefix and format as bullet
+						const cleanedLine = line.replace(separatorRegex, '').trim();
+						if (cleanedLine) {
+							formattedLines.push(`- ${cleanedLine}`);
+						}
+					} else if (line.trim()) {
+						// Keep non-empty lines that don't match the pattern
+						formattedLines.push(line);
+					}
+				}
+
+				const formattedText = formattedLines.length > 0 ? formattedLines.join('\n') : text;
+				await this.vaultManager.insertIntoDailyNote(formattedText, this.settings.dailyNoteImportHeading);
+			} catch (error) {
+				console.error('Error applying separator pattern:', error);
+				// Fall back to inserting raw text
+				await this.vaultManager.insertIntoDailyNote(text, this.settings.dailyNoteImportHeading);
+			}
+		} else {
+			// No separator pattern, insert as-is
+			await this.vaultManager.insertIntoDailyNote(text, this.settings.dailyNoteImportHeading);
+		}
+	}
+
+	/**
+	 * Prompt user for action when default action is 'prompt'
+	 */
+	private async promptUserForAction(text: string, fileName: string): Promise<void> {
+		// Create a simple modal to ask the user what to do
+		const modal = new DefaultActionModal(this.app, text, fileName, async (action: string) => {
+			if (action === 'daily-note' && this.vaultManager) {
+				await this.insertIntoDailyNoteWithSeparators(text);
+				new Notice('Text inserted into daily note');
+			} else if (action === 'discard') {
+				new Notice('Text discarded');
+			}
+		});
+
+		modal.open();
 	}
 
 	/**

@@ -157,14 +157,14 @@
     - Log action results and errors
     - _Requirements: 3.3_
 
-- [ ] 8. Implement image processing command
-  - [ ] 8.1 Create file picker integration
+- [x] 8. Implement image processing command
+  - [x] 8.1 Create file picker integration
     - Add command to open file picker for image selection
     - Filter for image file types (jpg, png, etc.)
     - Support multiple file selection
     - _Requirements: 1.1, 1.2_
 
-  - [ ] 8.2 Implement image processing pipeline
+  - [x] 8.2 Implement image processing pipeline
     - Read selected image files as ArrayBuffer
     - Pass image data to OCR service
     - Handle OCR errors and display error notifications
@@ -174,7 +174,7 @@
     - Display success notification with summary
     - _Requirements: 1.2, 1.3, 1.4, 1.5_
 
-  - [ ] 8.3 Implement default action handler
+  - [x] 8.3 Implement default action handler
     - Check settings for default action type
     - If daily-note, insert into daily note with separator formatting
     - If discard, skip processing
