@@ -300,23 +300,23 @@
     - Validate template syntax
     - _Requirements: 11.5_
 
-- [ ] 13. Implement plugin commands and ribbon
-  - [ ] 13.1 Add main import command
+- [x] 13. Implement plugin commands and ribbon
+  - [x] 13.1 Add main import command
     - Register "Import from notebook images" command
     - Bind to file picker and processing pipeline
     - _Requirements: 1.1_
 
-  - [ ] 13.2 Add camera capture command
+  - [x] 13.2 Add camera capture command
     - Register "Capture and import" command (mobile only)
     - Bind to camera capture functionality
     - _Requirements: 10.2_
 
-  - [ ] 13.3 Add utility commands
+  - [x] 13.3 Add utility commands
     - Add "Test processing rules" command to open test modal
     - Add "Process folder now" command to manually trigger folder monitoring
     - _Requirements: 11.1_
 
-  - [ ] 13.4 Add ribbon icon
+  - [x] 13.4 Add ribbon icon
     - Add ribbon icon for quick access to import command
     - Use appropriate icon (camera or document icon)
     - _Requirements: 1.1_

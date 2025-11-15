@@ -1581,7 +1581,10 @@ export default class NotebookOCRPlugin extends Plugin {
 		// Register commands
 		this.registerCommands();
 
-		// TODO: Add ribbon icon
+		// Add ribbon icon for quick access to import command
+		this.addRibbonIcon('camera', 'Import from notebook images', () => {
+			this.openImagePicker();
+		});
 	}
 
 	/**
@@ -1603,6 +1606,20 @@ export default class NotebookOCRPlugin extends Plugin {
 				callback: () => this.openCameraCapture()
 			});
 		}
+
+		// Add test processing rules command
+		this.addCommand({
+			id: 'test-processing-rules',
+			name: 'Test processing rules',
+			callback: () => this.openRuleTester()
+		});
+
+		// Add process folder now command
+		this.addCommand({
+			id: 'process-folder-now',
+			name: 'Process folder now',
+			callback: () => this.processFolderNow()
+		});
 	}
 
 	/**
@@ -1938,6 +1955,32 @@ export default class NotebookOCRPlugin extends Plugin {
 	}
 
 	/**
+	 * Open the rule tester modal
+	 */
+	private openRuleTester(): void {
+		const modal = new RuleTesterModal(this.app, this);
+		modal.open();
+	}
+
+	/**
+	 * Manually trigger folder monitoring to process folder immediately
+	 */
+	private async processFolderNow(): Promise<void> {
+		if (!this.folderMonitor) {
+			new Notice('Folder monitor not initialized');
+			return;
+		}
+
+		if (!this.settings.folderMonitoringEnabled) {
+			new Notice('Folder monitoring is disabled. Enable it in settings first.');
+			return;
+		}
+
+		new Notice(`Checking ${this.settings.monitoredFolderPath} for new images...`);
+		await this.folderMonitor.checkForNewImages(this.settings.monitoredFolderPath);
+	}
+
+	/**
 	 * Called when the plugin is unloaded
 	 */
 	async onunload() {
@@ -1966,6 +2009,281 @@ export default class NotebookOCRPlugin extends Plugin {
 	 */
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+}
+
+/**
+ * Modal for testing processing rules against sample text
+ */
+class RuleTesterModal extends Modal {
+	private plugin: NotebookOCRPlugin;
+
+	constructor(app: App, plugin: NotebookOCRPlugin) {
+		super(app);
+		this.plugin = plugin;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+
+		contentEl.empty();
+		contentEl.createEl('h2', { text: 'Test Processing Rules' });
+
+		contentEl.createEl('p', {
+			text: 'Test your processing rules against sample OCR text to see which rules match and what actions would be executed.',
+			cls: 'setting-item-description'
+		});
+
+		// Sample text input
+		const sampleTextSetting = new Setting(contentEl)
+			.setName('Sample OCR Text')
+			.setDesc('Enter sample text to test against your rules');
+
+		const sampleTextarea = sampleTextSetting.controlEl.createEl('textarea', {
+			placeholder: 'Enter sample OCR text here...\n\nFor example:\nProject: My New Project\nDue: 2024-12-31\nStatus: Active'
+		});
+		sampleTextarea.style.width = '100%';
+		sampleTextarea.style.minHeight = '150px';
+		sampleTextarea.style.fontFamily = 'monospace';
+		sampleTextarea.style.fontSize = '0.9em';
+
+		// Test button
+		new Setting(contentEl)
+			.setName('Test Rules')
+			.setDesc('Test all enabled rules against the sample text')
+			.addButton(button => button
+				.setButtonText('Test')
+				.setCta()
+				.onClick(async () => {
+					await this.testRules(contentEl, sampleTextarea.value);
+				}));
+
+		// Results container
+		const resultsContainer = contentEl.createDiv({ cls: 'notebook-ocr-test-results' });
+		resultsContainer.style.marginTop = '20px';
+
+		// Close button
+		const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+		buttonContainer.style.display = 'flex';
+		buttonContainer.style.justifyContent = 'flex-end';
+		buttonContainer.style.marginTop = '20px';
+
+		const closeButton = buttonContainer.createEl('button', { text: 'Close' });
+		closeButton.addEventListener('click', () => {
+			this.close();
+		});
+	}
+
+	/**
+	 * Test all rules against the sample text and display results
+	 */
+	private async testRules(containerEl: HTMLElement, sampleText: string): Promise<void> {
+		const resultsContainer = containerEl.querySelector('.notebook-ocr-test-results') as HTMLElement;
+		if (!resultsContainer) return;
+
+		resultsContainer.empty();
+
+		if (!sampleText.trim()) {
+			resultsContainer.createEl('p', {
+				text: 'Please enter sample text to test.',
+				cls: 'setting-item-description'
+			});
+			return;
+		}
+
+		if (!this.plugin.ruleEngine) {
+			resultsContainer.createEl('p', {
+				text: 'Rule engine not available.',
+				cls: 'setting-item-description'
+			});
+			return;
+		}
+
+		// Get enabled rules
+		const enabledRules = this.plugin.settings.processingRules.filter(rule => rule.enabled);
+
+		if (enabledRules.length === 0) {
+			const noRulesDiv = resultsContainer.createDiv();
+			noRulesDiv.style.padding = '15px';
+			noRulesDiv.style.backgroundColor = 'var(--background-secondary)';
+			noRulesDiv.style.borderRadius = '5px';
+			noRulesDiv.createEl('p', {
+				text: 'No enabled rules found. Create and enable rules in the plugin settings to test them.',
+				cls: 'setting-item-description'
+			});
+			return;
+		}
+
+		// Test rules
+		const matches = await this.plugin.ruleEngine.matchAndExecute(sampleText);
+
+		// Display results header
+		const headerDiv = resultsContainer.createDiv();
+		headerDiv.style.padding = '10px';
+		headerDiv.style.backgroundColor = 'var(--background-secondary)';
+		headerDiv.style.borderRadius = '5px';
+		headerDiv.style.marginBottom = '15px';
+
+		if (matches.length > 0) {
+			headerDiv.createEl('strong', { text: `✓ ${matches.length} rule${matches.length > 1 ? 's' : ''} matched` });
+		} else {
+			headerDiv.createEl('strong', { text: '✗ No rules matched' });
+			headerDiv.createEl('p', {
+				text: `Default action would be applied: ${this.plugin.settings.defaultAction}`,
+				cls: 'setting-item-description'
+			});
+		}
+
+		// Display each match
+		matches.forEach((match, index) => {
+			const matchDiv = resultsContainer.createDiv();
+			matchDiv.style.padding = '15px';
+			matchDiv.style.border = '2px solid var(--interactive-accent)';
+			matchDiv.style.borderRadius = '5px';
+			matchDiv.style.marginBottom = '15px';
+
+			// Rule name and priority
+			const titleDiv = matchDiv.createDiv();
+			titleDiv.style.marginBottom = '10px';
+			titleDiv.createEl('h3', { text: `Match ${index + 1}: ${match.rule.name}` });
+			titleDiv.createEl('p', {
+				text: `Priority: ${match.rule.priority}`,
+				cls: 'setting-item-description'
+			});
+
+			// Matched text
+			const matchedTextDiv = matchDiv.createDiv();
+			matchedTextDiv.style.marginBottom = '10px';
+			matchedTextDiv.createEl('strong', { text: 'Matched Text:' });
+			const matchedPre = matchedTextDiv.createEl('pre');
+			matchedPre.style.marginTop = '5px';
+			matchedPre.style.padding = '10px';
+			matchedPre.style.backgroundColor = 'var(--background-secondary)';
+			matchedPre.style.borderRadius = '3px';
+			matchedPre.style.whiteSpace = 'pre-wrap';
+			matchedPre.textContent = match.matchedText;
+
+			// Capture groups
+			if (match.captureGroups.length > 0) {
+				const captureDiv = matchDiv.createDiv();
+				captureDiv.style.marginBottom = '10px';
+				captureDiv.createEl('strong', { text: 'Capture Groups:' });
+
+				const captureList = captureDiv.createEl('ul');
+				captureList.style.marginTop = '5px';
+
+				match.captureGroups.forEach((group, groupIndex) => {
+					const listItem = captureList.createEl('li');
+					listItem.style.fontFamily = 'monospace';
+					listItem.innerHTML = `<strong>{{${groupIndex + 1}}}</strong>: ${group}`;
+				});
+			}
+
+			// Actions
+			const actionsDiv = matchDiv.createDiv();
+			actionsDiv.createEl('strong', { text: 'Actions to Execute:' });
+
+			const actionsList = actionsDiv.createEl('ol');
+			actionsList.style.marginTop = '5px';
+
+			match.rule.actions.forEach((action) => {
+				const actionItem = actionsList.createEl('li');
+				actionItem.style.marginBottom = '10px';
+
+				const actionType = actionItem.createEl('div');
+				actionType.innerHTML = `<strong>Type:</strong> ${action.type}`;
+
+				// Show action details based on type
+				if (action.type === 'create-note') {
+					const config = action.config as CreateNoteConfig;
+					const detailsDiv = actionItem.createDiv();
+					detailsDiv.style.marginTop = '5px';
+					detailsDiv.style.paddingLeft = '15px';
+					detailsDiv.style.borderLeft = '2px solid var(--background-modifier-border)';
+
+					const renderedTitle = RuleEngine.renderTemplate(config.titleTemplate, match.captureGroups);
+					detailsDiv.innerHTML += `<div><strong>Folder:</strong> ${config.folderPath || '(root)'}</div>`;
+					detailsDiv.innerHTML += `<div><strong>Title:</strong> ${renderedTitle}</div>`;
+
+					if (Object.keys(config.frontmatter).length > 0) {
+						detailsDiv.innerHTML += `<div style="margin-top: 5px;"><strong>Frontmatter:</strong></div>`;
+						const fmList = detailsDiv.createEl('ul');
+						fmList.style.marginTop = '2px';
+						for (const [key, value] of Object.entries(config.frontmatter)) {
+							const fmItem = fmList.createEl('li');
+							fmItem.style.fontFamily = 'monospace';
+							fmItem.innerHTML = `${key}: ${RuleEngine.renderTemplate(value, match.captureGroups)}`;
+						}
+					}
+
+					if (config.bodyTemplate) {
+						const renderedBody = RuleEngine.renderTemplate(config.bodyTemplate, match.captureGroups);
+						detailsDiv.innerHTML += `<div style="margin-top: 5px;"><strong>Body:</strong></div>`;
+						const bodyPre = detailsDiv.createEl('pre');
+						bodyPre.style.marginTop = '2px';
+						bodyPre.style.padding = '5px';
+						bodyPre.style.backgroundColor = 'var(--background-secondary)';
+						bodyPre.style.borderRadius = '3px';
+						bodyPre.style.whiteSpace = 'pre-wrap';
+						bodyPre.style.fontSize = '0.85em';
+						bodyPre.textContent = renderedBody;
+					}
+				} else if (action.type === 'insert-content') {
+					const config = action.config as InsertContentConfig;
+					const detailsDiv = actionItem.createDiv();
+					detailsDiv.style.marginTop = '5px';
+					detailsDiv.style.paddingLeft = '15px';
+					detailsDiv.style.borderLeft = '2px solid var(--background-modifier-border)';
+
+					const renderedTarget = RuleEngine.renderTemplate(config.targetNote, match.captureGroups);
+					const renderedContent = RuleEngine.renderTemplate(config.contentTemplate, match.captureGroups);
+
+					detailsDiv.innerHTML += `<div><strong>Target Note:</strong> ${renderedTarget}</div>`;
+					detailsDiv.innerHTML += `<div><strong>Insertion Point:</strong> ${config.insertionPoint.type}</div>`;
+
+					if (config.insertionPoint.pattern) {
+						detailsDiv.innerHTML += `<div><strong>Pattern:</strong> ${config.insertionPoint.pattern}</div>`;
+					}
+					if (config.insertionPoint.heading) {
+						detailsDiv.innerHTML += `<div><strong>Heading:</strong> ${config.insertionPoint.heading}</div>`;
+					}
+
+					detailsDiv.innerHTML += `<div style="margin-top: 5px;"><strong>Content:</strong></div>`;
+					const contentPre = detailsDiv.createEl('pre');
+					contentPre.style.marginTop = '2px';
+					contentPre.style.padding = '5px';
+					contentPre.style.backgroundColor = 'var(--background-secondary)';
+					contentPre.style.borderRadius = '3px';
+					contentPre.style.whiteSpace = 'pre-wrap';
+					contentPre.style.fontSize = '0.85em';
+					contentPre.textContent = renderedContent;
+				} else if (action.type === 'modify-frontmatter') {
+					const config = action.config as ModifyFrontmatterConfig;
+					const detailsDiv = actionItem.createDiv();
+					detailsDiv.style.marginTop = '5px';
+					detailsDiv.style.paddingLeft = '15px';
+					detailsDiv.style.borderLeft = '2px solid var(--background-modifier-border)';
+
+					const renderedTarget = RuleEngine.renderTemplate(config.targetNote, match.captureGroups);
+					detailsDiv.innerHTML += `<div><strong>Target Note:</strong> ${renderedTarget}</div>`;
+					detailsDiv.innerHTML += `<div><strong>Append to Arrays:</strong> ${config.appendToArrays ? 'Yes' : 'No'}</div>`;
+
+					detailsDiv.innerHTML += `<div style="margin-top: 5px;"><strong>Properties:</strong></div>`;
+					const propsList = detailsDiv.createEl('ul');
+					propsList.style.marginTop = '2px';
+					for (const [key, value] of Object.entries(config.properties)) {
+						const propItem = propsList.createEl('li');
+						propItem.style.fontFamily = 'monospace';
+						propItem.innerHTML = `${key}: ${RuleEngine.renderTemplate(value, match.captureGroups)}`;
+					}
+				}
+			});
+		});
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
 	}
 }
 
