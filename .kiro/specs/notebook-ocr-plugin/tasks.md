@@ -69,31 +69,31 @@
     - Handle service initialization and error cases
     - _Requirements: 1.2_
 
-- [ ] 5. Implement vault manager for file operations
-  - [ ] 5.1 Create VaultManager class
+- [x] 5. Implement vault manager for file operations
+  - [x] 5.1 Create VaultManager class
     - Implement constructor accepting App and Vault instances
     - _Requirements: 1.3, 2.4_
 
-  - [ ] 5.2 Implement daily note operations
+  - [x] 5.2 Implement daily note operations
     - Implement getDailyNote() to get or create daily note for a date
     - Implement insertIntoDailyNote() to insert content under configured heading
     - Handle heading creation if it doesn't exist
     - _Requirements: 1.3, 2.2, 2.3, 2.4_
 
-  - [ ] 5.3 Implement note creation operations
+  - [x] 5.3 Implement note creation operations
     - Implement createNote() to create new note with frontmatter and body
     - Handle folder creation if folder doesn't exist
     - Generate unique filenames if file already exists
     - _Requirements: 4.5_
 
-  - [ ] 5.4 Implement content insertion operations
+  - [x] 5.4 Implement content insertion operations
     - Implement insertContent() to insert content at specified insertion point
     - Implement findHeading() helper to locate heading in content
     - Implement findPattern() helper to locate regex pattern in content
     - Handle all insertion point types (beginning, end, before/after pattern, under heading)
     - _Requirements: 5.2, 5.3, 5.5_
 
-  - [ ] 5.5 Implement frontmatter operations
+  - [x] 5.5 Implement frontmatter operations
     - Implement modifyFrontmatter() to update note frontmatter properties
     - Handle array property appending vs replacement
     - Parse and serialize YAML frontmatter correctly

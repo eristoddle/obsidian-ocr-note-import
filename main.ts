@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, Notice } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, TFolder, Vault, normalizePath } from 'obsidian';
 import { createWorker, Worker } from 'tesseract.js';
 
 /**
@@ -201,6 +201,386 @@ async function createOCRService(settings: PluginSettings): Promise<OCRService> {
 }
 
 /**
+ * VaultManager class for handling all file operations within the Obsidian vault
+ */
+class VaultManager {
+	private app: App;
+	private vault: Vault;
+
+	/**
+	 * Constructor accepting App and Vault instances
+	 */
+	constructor(app: App, vault: Vault) {
+		this.app = app;
+		this.vault = vault;
+	}
+
+	/**
+	 * Get or create a daily note for a specific date
+	 */
+	async getDailyNote(date: Date): Promise<TFile> {
+		// Format date as YYYY-MM-DD
+		const dateStr = date.toISOString().split('T')[0];
+
+		// Try to find existing daily note
+		// Check common daily note locations
+		const possiblePaths = [
+			`${dateStr}.md`,
+			`Daily Notes/${dateStr}.md`,
+			`Journal/${dateStr}.md`,
+			`daily/${dateStr}.md`
+		];
+
+		for (const path of possiblePaths) {
+			const file = this.vault.getAbstractFileByPath(path);
+			if (file instanceof TFile) {
+				return file;
+			}
+		}
+
+		// If not found, create a new daily note in the root
+		const filePath = `${dateStr}.md`;
+		const content = `# ${dateStr}\n\n`;
+
+		return await this.vault.create(filePath, content);
+	}
+
+	/**
+	 * Insert content into a daily note under a configured heading
+	 */
+	async insertIntoDailyNote(content: string, heading?: string): Promise<void> {
+		const today = new Date();
+		const dailyNote = await this.getDailyNote(today);
+
+		let fileContent = await this.vault.read(dailyNote);
+
+		if (heading) {
+			// Find or create the heading
+			const headingIndex = this.findHeading(fileContent, heading);
+
+			if (headingIndex === -1) {
+				// Heading doesn't exist, add it at the end
+				fileContent += `\n${heading}\n\n${content}\n`;
+			} else {
+				// Find the next heading or end of file
+				const lines = fileContent.split('\n');
+				const headingLevel = heading.match(/^#+/)?.[0].length || 2;
+				let insertIndex = headingIndex + 1;
+
+				// Skip to the line after the heading
+				while (insertIndex < lines.length && lines[insertIndex].trim() === '') {
+					insertIndex++;
+				}
+
+				// Find the next heading of same or higher level
+				let nextHeadingIndex = lines.length;
+				for (let i = insertIndex; i < lines.length; i++) {
+					const line = lines[i];
+					const match = line.match(/^(#+)\s/);
+					if (match && match[1].length <= headingLevel) {
+						nextHeadingIndex = i;
+						break;
+					}
+				}
+
+				// Insert content before the next heading
+				lines.splice(nextHeadingIndex, 0, content, '');
+				fileContent = lines.join('\n');
+			}
+		} else {
+			// No heading specified, append to end
+			fileContent += `\n${content}\n`;
+		}
+
+		await this.vault.modify(dailyNote, fileContent);
+	}
+
+	/**
+	 * Create a new note with frontmatter and body content
+	 */
+	async createNote(
+		folderPath: string,
+		title: string,
+		frontmatter: Record<string, any>,
+		body: string
+	): Promise<TFile> {
+		// Normalize folder path
+		const normalizedFolder = normalizePath(folderPath);
+
+		// Ensure folder exists
+		await this.ensureFolderExists(normalizedFolder);
+
+		// Generate file path
+		let fileName = `${title}.md`;
+		let filePath = normalizedFolder ? `${normalizedFolder}/${fileName}` : fileName;
+
+		// Handle duplicate filenames
+		filePath = await this.getUniqueFilePath(filePath);
+
+		// Build frontmatter content
+		let content = '';
+		if (Object.keys(frontmatter).length > 0) {
+			content += '---\n';
+			for (const [key, value] of Object.entries(frontmatter)) {
+				if (Array.isArray(value)) {
+					content += `${key}:\n`;
+					for (const item of value) {
+						content += `  - ${item}\n`;
+					}
+				} else {
+					content += `${key}: ${value}\n`;
+				}
+			}
+			content += '---\n\n';
+		}
+
+		content += body;
+
+		return await this.vault.create(filePath, content);
+	}
+
+	/**
+	 * Insert content at a specified insertion point in a target note
+	 */
+	async insertContent(
+		targetPath: string,
+		content: string,
+		insertionPoint: InsertionPoint
+	): Promise<void> {
+		const file = this.vault.getAbstractFileByPath(targetPath);
+		if (!(file instanceof TFile)) {
+			throw new Error(`Target note not found: ${targetPath}`);
+		}
+
+		let fileContent = await this.vault.read(file);
+
+		switch (insertionPoint.type) {
+			case 'beginning':
+				fileContent = content + '\n\n' + fileContent;
+				break;
+
+			case 'end':
+				fileContent = fileContent + '\n\n' + content;
+				break;
+
+			case 'before-pattern':
+				if (insertionPoint.pattern) {
+					const index = this.findPattern(fileContent, insertionPoint.pattern);
+					if (index !== -1) {
+						const lines = fileContent.split('\n');
+						lines.splice(index, 0, content, '');
+						fileContent = lines.join('\n');
+					} else {
+						// Pattern not found, append to end
+						fileContent = fileContent + '\n\n' + content;
+					}
+				}
+				break;
+
+			case 'after-pattern':
+				if (insertionPoint.pattern) {
+					const index = this.findPattern(fileContent, insertionPoint.pattern);
+					if (index !== -1) {
+						const lines = fileContent.split('\n');
+						lines.splice(index + 1, 0, '', content);
+						fileContent = lines.join('\n');
+					} else {
+						// Pattern not found, append to end
+						fileContent = fileContent + '\n\n' + content;
+					}
+				}
+				break;
+
+			case 'under-heading':
+				if (insertionPoint.heading) {
+					const index = this.findHeading(fileContent, insertionPoint.heading);
+					if (index !== -1) {
+						const lines = fileContent.split('\n');
+						const headingLevel = insertionPoint.heading.match(/^#+/)?.[0].length || 2;
+						let insertIndex = index + 1;
+
+						// Skip empty lines after heading
+						while (insertIndex < lines.length && lines[insertIndex].trim() === '') {
+							insertIndex++;
+						}
+
+						// Insert content
+						lines.splice(insertIndex, 0, content, '');
+						fileContent = lines.join('\n');
+					} else {
+						// Heading not found, create it and add content
+						fileContent += `\n${insertionPoint.heading}\n\n${content}\n`;
+					}
+				}
+				break;
+		}
+
+		await this.vault.modify(file, fileContent);
+	}
+
+	/**
+	 * Modify frontmatter properties in a note
+	 */
+	async modifyFrontmatter(
+		file: TFile,
+		properties: Record<string, any>,
+		append: boolean
+	): Promise<void> {
+		let content = await this.vault.read(file);
+
+		// Parse existing frontmatter
+		const frontmatterRegex = /^---\n([\s\S]*?)\n---\n/;
+		const match = content.match(frontmatterRegex);
+
+		let existingFrontmatter: Record<string, any> = {};
+		let bodyContent = content;
+
+		if (match) {
+			// Parse existing frontmatter
+			const frontmatterText = match[1];
+			const lines = frontmatterText.split('\n');
+
+			let currentKey: string | null = null;
+			let currentArray: string[] = [];
+
+			for (const line of lines) {
+				const keyValueMatch = line.match(/^(\w+):\s*(.*)$/);
+				const arrayItemMatch = line.match(/^\s+-\s+(.+)$/);
+
+				if (keyValueMatch) {
+					// Save previous array if exists
+					if (currentKey && currentArray.length > 0) {
+						existingFrontmatter[currentKey] = currentArray;
+						currentArray = [];
+					}
+
+					currentKey = keyValueMatch[1];
+					const value = keyValueMatch[2].trim();
+
+					if (value) {
+						existingFrontmatter[currentKey] = value;
+						currentKey = null;
+					}
+				} else if (arrayItemMatch && currentKey) {
+					currentArray.push(arrayItemMatch[1]);
+				}
+			}
+
+			// Save last array if exists
+			if (currentKey && currentArray.length > 0) {
+				existingFrontmatter[currentKey] = currentArray;
+			}
+
+			// Remove frontmatter from body
+			bodyContent = content.substring(match[0].length);
+		}
+
+		// Merge properties
+		for (const [key, value] of Object.entries(properties)) {
+			if (append && Array.isArray(existingFrontmatter[key])) {
+				// Append to existing array
+				if (Array.isArray(value)) {
+					existingFrontmatter[key] = [...existingFrontmatter[key], ...value];
+				} else {
+					existingFrontmatter[key] = [...existingFrontmatter[key], value];
+				}
+			} else if (append && existingFrontmatter[key] !== undefined) {
+				// Convert to array and append
+				const existing = existingFrontmatter[key];
+				if (Array.isArray(value)) {
+					existingFrontmatter[key] = [existing, ...value];
+				} else {
+					existingFrontmatter[key] = [existing, value];
+				}
+			} else {
+				// Replace or set new property
+				existingFrontmatter[key] = value;
+			}
+		}
+
+		// Rebuild content with updated frontmatter
+		let newContent = '---\n';
+		for (const [key, value] of Object.entries(existingFrontmatter)) {
+			if (Array.isArray(value)) {
+				newContent += `${key}:\n`;
+				for (const item of value) {
+					newContent += `  - ${item}\n`;
+				}
+			} else {
+				newContent += `${key}: ${value}\n`;
+			}
+		}
+		newContent += '---\n';
+		newContent += bodyContent;
+
+		await this.vault.modify(file, newContent);
+	}
+
+	/**
+	 * Find a heading in content and return its line index
+	 */
+	findHeading(content: string, heading: string): number {
+		const lines = content.split('\n');
+		const normalizedHeading = heading.trim().toLowerCase();
+
+		for (let i = 0; i < lines.length; i++) {
+			const line = lines[i].trim().toLowerCase();
+			if (line === normalizedHeading) {
+				return i;
+			}
+		}
+
+		return -1;
+	}
+
+	/**
+	 * Find a pattern in content and return its line index
+	 */
+	findPattern(content: string, pattern: string): number {
+		const lines = content.split('\n');
+		const regex = new RegExp(pattern);
+
+		for (let i = 0; i < lines.length; i++) {
+			if (regex.test(lines[i])) {
+				return i;
+			}
+		}
+
+		return -1;
+	}
+
+	/**
+	 * Ensure a folder exists, creating it if necessary
+	 */
+	private async ensureFolderExists(folderPath: string): Promise<void> {
+		if (!folderPath) return;
+
+		const folder = this.vault.getAbstractFileByPath(folderPath);
+		if (!folder) {
+			await this.vault.createFolder(folderPath);
+		}
+	}
+
+	/**
+	 * Get a unique file path by appending a number if the file already exists
+	 */
+	private async getUniqueFilePath(filePath: string): Promise<string> {
+		let uniquePath = filePath;
+		let counter = 1;
+
+		while (this.vault.getAbstractFileByPath(uniquePath)) {
+			const pathParts = filePath.split('.');
+			const extension = pathParts.pop();
+			const basePath = pathParts.join('.');
+			uniquePath = `${basePath} ${counter}.${extension}`;
+			counter++;
+		}
+
+		return uniquePath;
+	}
+}
+
+/**
  * Default plugin settings
  */
 const DEFAULT_SETTINGS: PluginSettings = {
@@ -224,6 +604,7 @@ const DEFAULT_SETTINGS: PluginSettings = {
 export default class NotebookOCRPlugin extends Plugin {
 	settings: PluginSettings;
 	ocrService: OCRService | null = null;
+	vaultManager: VaultManager | null = null;
 
 	/**
 	 * Called when the plugin is loaded
@@ -243,11 +624,14 @@ export default class NotebookOCRPlugin extends Plugin {
 			new Notice('Failed to initialize OCR service. Please check console for details.');
 		}
 
+		// Initialize vault manager
+		this.vaultManager = new VaultManager(this.app, this.app.vault);
+		console.log('Vault manager initialized');
+
 		// Add settings tab
 		this.addSettingTab(new NotebookOCRSettingTab(this.app, this));
 
 		// TODO: Initialize rule engine
-		// TODO: Initialize vault manager
 		// TODO: Initialize folder monitor
 		// TODO: Register commands
 		// TODO: Add ribbon icon
