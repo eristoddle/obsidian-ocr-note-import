@@ -581,6 +581,172 @@ class VaultManager {
 }
 
 /**
+ * Rule match result interface
+ */
+interface RuleMatch {
+	rule: ProcessingRule;
+	captureGroups: string[];
+	matchedText: string;
+}
+
+/**
+ * Pattern test result interface
+ */
+interface PatternTestResult {
+	matched: boolean;
+	captureGroups: string[];
+	error?: string;
+}
+
+/**
+ * Regex validation result interface
+ */
+interface ValidationResult {
+	valid: boolean;
+	error?: string;
+}
+
+/**
+ * RuleEngine class for pattern matching and rule execution
+ */
+class RuleEngine {
+	private rules: ProcessingRule[];
+	private regexCache: Map<string, RegExp>;
+
+	/**
+	 * Constructor to initialize with rules array
+	 */
+	constructor(rules: ProcessingRule[]) {
+		this.rules = rules;
+		this.regexCache = new Map<string, RegExp>();
+	}
+
+	/**
+	 * Update the rules array
+	 */
+	setRules(rules: ProcessingRule[]): void {
+		this.rules = rules;
+		// Clear cache when rules change
+		this.regexCache.clear();
+	}
+
+	/**
+	 * Get a compiled regex from cache or create and cache it
+	 */
+	private getCompiledRegex(pattern: string): RegExp {
+		if (!this.regexCache.has(pattern)) {
+			this.regexCache.set(pattern, new RegExp(pattern, 'gm'));
+		}
+		return this.regexCache.get(pattern)!;
+	}
+
+	/**
+	 * Match OCR text against all rules and return matches
+	 */
+	async matchAndExecute(text: string): Promise<RuleMatch[]> {
+		const matches: RuleMatch[] = [];
+
+		// Filter enabled rules and sort by priority (higher priority first)
+		const enabledRules = this.rules
+			.filter(rule => rule.enabled)
+			.sort((a, b) => b.priority - a.priority);
+
+		// Test each rule against the text
+		for (const rule of enabledRules) {
+			try {
+				const regex = this.getCompiledRegex(rule.pattern);
+				// Reset regex state
+				regex.lastIndex = 0;
+
+				const match = regex.exec(text);
+
+				if (match) {
+					// Extract capture groups (excluding the full match at index 0)
+					const captureGroups = match.slice(1);
+
+					matches.push({
+						rule: rule,
+						captureGroups: captureGroups,
+						matchedText: match[0]
+					});
+				}
+			} catch (error) {
+				console.error(`Error testing rule "${rule.name}":`, error);
+			}
+		}
+
+		return matches;
+	}
+
+	/**
+	 * Test a pattern against sample text
+	 */
+	testPattern(pattern: string, text: string): PatternTestResult {
+		try {
+			const regex = new RegExp(pattern, 'gm');
+			const match = regex.exec(text);
+
+			if (match) {
+				// Extract capture groups (excluding the full match at index 0)
+				const captureGroups = match.slice(1);
+
+				return {
+					matched: true,
+					captureGroups: captureGroups
+				};
+			} else {
+				return {
+					matched: false,
+					captureGroups: []
+				};
+			}
+		} catch (error) {
+			return {
+				matched: false,
+				captureGroups: [],
+				error: error instanceof Error ? error.message : 'Invalid regex pattern'
+			};
+		}
+	}
+
+	/**
+	 * Validate regex syntax
+	 */
+	validateRegex(pattern: string): ValidationResult {
+		try {
+			new RegExp(pattern);
+			return {
+				valid: true
+			};
+		} catch (error) {
+			return {
+				valid: false,
+				error: error instanceof Error ? error.message : 'Invalid regex pattern'
+			};
+		}
+	}
+
+	/**
+	 * Render a template string by replacing capture group placeholders
+	 */
+	static renderTemplate(template: string, captureGroups: string[]): string {
+		let rendered = template;
+
+		// Replace {{$1}}, {{$2}}, etc. with capture groups
+		for (let i = 0; i < captureGroups.length; i++) {
+			const placeholder = `{{$${i + 1}}}`;
+			const value = captureGroups[i] || '';
+			rendered = rendered.replace(new RegExp(placeholder.replace(/[{}$]/g, '\\$&'), 'g'), value);
+		}
+
+		// Handle any remaining unreplaced placeholders by replacing with empty string
+		rendered = rendered.replace(/\{\{\$\d+\}\}/g, '');
+
+		return rendered;
+	}
+}
+
+/**
  * Default plugin settings
  */
 const DEFAULT_SETTINGS: PluginSettings = {
@@ -605,6 +771,7 @@ export default class NotebookOCRPlugin extends Plugin {
 	settings: PluginSettings;
 	ocrService: OCRService | null = null;
 	vaultManager: VaultManager | null = null;
+	ruleEngine: RuleEngine | null = null;
 
 	/**
 	 * Called when the plugin is loaded
@@ -628,10 +795,13 @@ export default class NotebookOCRPlugin extends Plugin {
 		this.vaultManager = new VaultManager(this.app, this.app.vault);
 		console.log('Vault manager initialized');
 
+		// Initialize rule engine
+		this.ruleEngine = new RuleEngine(this.settings.processingRules);
+		console.log('Rule engine initialized');
+
 		// Add settings tab
 		this.addSettingTab(new NotebookOCRSettingTab(this.app, this));
 
-		// TODO: Initialize rule engine
 		// TODO: Initialize folder monitor
 		// TODO: Register commands
 		// TODO: Add ribbon icon

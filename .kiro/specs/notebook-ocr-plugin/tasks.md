@@ -99,26 +99,26 @@
     - Parse and serialize YAML frontmatter correctly
     - _Requirements: 6.2, 6.3, 6.4, 6.5_
 
-- [ ] 6. Implement rule engine for pattern matching
-  - [ ] 6.1 Create RuleEngine class
+- [x] 6. Implement rule engine for pattern matching
+  - [x] 6.1 Create RuleEngine class
     - Implement constructor to initialize with rules array
     - Create regex cache for compiled patterns
     - _Requirements: 3.1, 3.2_
 
-  - [ ] 6.2 Implement pattern matching logic
+  - [x] 6.2 Implement pattern matching logic
     - Implement matchAndExecute() to test OCR text against all rules
     - Sort rules by priority before testing
     - Extract capture groups from matches
     - Return array of RuleMatch objects
     - _Requirements: 3.1, 3.5_
 
-  - [ ] 6.3 Implement pattern testing utilities
+  - [x] 6.3 Implement pattern testing utilities
     - Implement testPattern() for testing regex against sample text
     - Implement validateRegex() to check regex syntax validity
     - Return PatternTestResult with matches and capture groups
     - _Requirements: 11.2, 11.3, 11.5_
 
-  - [ ] 6.4 Implement template rendering
+  - [x] 6.4 Implement template rendering
     - Create helper function to replace {{$1}}, {{$2}} etc. with capture groups
     - Handle missing capture groups gracefully
     - Support template rendering in titles, content, and frontmatter values
