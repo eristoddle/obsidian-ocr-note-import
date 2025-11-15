@@ -747,6 +747,236 @@ class RuleEngine {
 }
 
 /**
+ * Action execution result interface
+ */
+interface ActionResult {
+	success: boolean;
+	action: RuleAction;
+	error?: string;
+	createdFile?: TFile;
+}
+
+/**
+ * ActionExecutor class for executing rule actions
+ */
+class ActionExecutor {
+	private vaultManager: VaultManager;
+
+	/**
+	 * Constructor accepting VaultManager instance
+	 */
+	constructor(vaultManager: VaultManager) {
+		this.vaultManager = vaultManager;
+	}
+
+	/**
+	 * Execute a create note action
+	 */
+	async executeCreateNote(
+		config: CreateNoteConfig,
+		captureGroups: string[]
+	): Promise<ActionResult> {
+		try {
+			// Render title template with capture groups
+			const title = RuleEngine.renderTemplate(config.titleTemplate, captureGroups);
+
+			// Render frontmatter values with capture groups
+			const renderedFrontmatter: Record<string, any> = {};
+			for (const [key, value] of Object.entries(config.frontmatter)) {
+				renderedFrontmatter[key] = RuleEngine.renderTemplate(value, captureGroups);
+			}
+
+			// Render body template with capture groups
+			const body = RuleEngine.renderTemplate(config.bodyTemplate, captureGroups);
+
+			// Call VaultManager.createNote() with rendered values
+			const createdFile = await this.vaultManager.createNote(
+				config.folderPath,
+				title,
+				renderedFrontmatter,
+				body
+			);
+
+			return {
+				success: true,
+				action: { type: 'create-note', config },
+				createdFile
+			};
+		} catch (error) {
+			console.error('Error executing create note action:', error);
+			return {
+				success: false,
+				action: { type: 'create-note', config },
+				error: error instanceof Error ? error.message : 'Unknown error'
+			};
+		}
+	}
+
+	/**
+	 * Execute an insert content action
+	 */
+	async executeInsertContent(
+		config: InsertContentConfig,
+		captureGroups: string[]
+	): Promise<ActionResult> {
+		try {
+			// Resolve target note path (support patterns or direct paths)
+			const targetPath = await this.resolveTargetNotePath(config.targetNote, captureGroups);
+
+			if (!targetPath) {
+				throw new Error(`Target note not found: ${config.targetNote}`);
+			}
+
+			// Render content template with capture groups
+			const content = RuleEngine.renderTemplate(config.contentTemplate, captureGroups);
+
+			// Call VaultManager.insertContent() with rendered content and insertion point
+			await this.vaultManager.insertContent(targetPath, content, config.insertionPoint);
+
+			return {
+				success: true,
+				action: { type: 'insert-content', config }
+			};
+		} catch (error) {
+			console.error('Error executing insert content action:', error);
+			return {
+				success: false,
+				action: { type: 'insert-content', config },
+				error: error instanceof Error ? error.message : 'Unknown error'
+			};
+		}
+	}
+
+	/**
+	 * Execute a modify frontmatter action
+	 */
+	async executeModifyFrontmatter(
+		config: ModifyFrontmatterConfig,
+		captureGroups: string[]
+	): Promise<ActionResult> {
+		try {
+			// Resolve target note path
+			const targetPath = await this.resolveTargetNotePath(config.targetNote, captureGroups);
+
+			if (!targetPath) {
+				throw new Error(`Target note not found: ${config.targetNote}`);
+			}
+
+			// Get the file
+			const file = this.vaultManager['vault'].getAbstractFileByPath(targetPath);
+			if (!(file instanceof TFile)) {
+				throw new Error(`Target is not a file: ${targetPath}`);
+			}
+
+			// Render property values with capture groups
+			const renderedProperties: Record<string, any> = {};
+			for (const [key, value] of Object.entries(config.properties)) {
+				renderedProperties[key] = RuleEngine.renderTemplate(value, captureGroups);
+			}
+
+			// Call VaultManager.modifyFrontmatter() with rendered properties
+			await this.vaultManager.modifyFrontmatter(file, renderedProperties, config.appendToArrays);
+
+			return {
+				success: true,
+				action: { type: 'modify-frontmatter', config }
+			};
+		} catch (error) {
+			console.error('Error executing modify frontmatter action:', error);
+			return {
+				success: false,
+				action: { type: 'modify-frontmatter', config },
+				error: error instanceof Error ? error.message : 'Unknown error'
+			};
+		}
+	}
+
+	/**
+	 * Execute all actions for a rule match
+	 */
+	async executeActions(ruleMatch: RuleMatch): Promise<ActionResult[]> {
+		const results: ActionResult[] = [];
+
+		// Execute each action in the rule
+		for (const action of ruleMatch.rule.actions) {
+			let result: ActionResult;
+
+			try {
+				switch (action.type) {
+					case 'create-note':
+						result = await this.executeCreateNote(
+							action.config as CreateNoteConfig,
+							ruleMatch.captureGroups
+						);
+						break;
+
+					case 'insert-content':
+						result = await this.executeInsertContent(
+							action.config as InsertContentConfig,
+							ruleMatch.captureGroups
+						);
+						break;
+
+					case 'modify-frontmatter':
+						result = await this.executeModifyFrontmatter(
+							action.config as ModifyFrontmatterConfig,
+							ruleMatch.captureGroups
+						);
+						break;
+
+					default:
+						result = {
+							success: false,
+							action,
+							error: `Unknown action type: ${action.type}`
+						};
+				}
+
+				results.push(result);
+
+				// Log action result
+				if (result.success) {
+					console.log(`Successfully executed ${action.type} action for rule "${ruleMatch.rule.name}"`);
+				} else {
+					console.error(`Failed to execute ${action.type} action for rule "${ruleMatch.rule.name}":`, result.error);
+				}
+			} catch (error) {
+				// Handle errors for individual actions without stopping execution
+				const errorResult: ActionResult = {
+					success: false,
+					action,
+					error: error instanceof Error ? error.message : 'Unknown error'
+				};
+				results.push(errorResult);
+				console.error(`Error executing action for rule "${ruleMatch.rule.name}":`, error);
+			}
+		}
+
+		return results;
+	}
+
+	/**
+	 * Resolve target note path, supporting both direct paths and template patterns
+	 */
+	private async resolveTargetNotePath(
+		targetNote: string,
+		captureGroups: string[]
+	): Promise<string | null> {
+		// Render the target note path with capture groups
+		const renderedPath = RuleEngine.renderTemplate(targetNote, captureGroups);
+
+		// Check if the file exists
+		const file = this.vaultManager['vault'].getAbstractFileByPath(renderedPath);
+		if (file instanceof TFile) {
+			return renderedPath;
+		}
+
+		// If not found, return null
+		return null;
+	}
+}
+
+/**
  * Default plugin settings
  */
 const DEFAULT_SETTINGS: PluginSettings = {
