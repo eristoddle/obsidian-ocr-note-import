@@ -112,7 +112,11 @@ class TesseractOCRService implements OCRService {
 	 */
 	async initialize(): Promise<void> {
 		try {
-			this.worker = await createWorker('eng');
+			this.worker = await createWorker({
+				langPath: 'https://tessdata.projectnaptha.com/4.0.0',
+			});
+			await this.worker.loadLanguage('eng');
+			await this.worker.initialize('eng');
 			this.initialized = true;
 			console.log('Tesseract OCR service initialized');
 		} catch (error) {
@@ -1585,6 +1589,672 @@ export default class NotebookOCRPlugin extends Plugin {
 }
 
 /**
+ * Modal for editing processing rules
+ */
+class RuleEditorModal extends Modal {
+	private plugin: NotebookOCRPlugin;
+	private rule: ProcessingRule;
+	private onSave: (rule: ProcessingRule) => Promise<void>;
+	private workingRule: ProcessingRule;
+
+	constructor(app: App, plugin: NotebookOCRPlugin, rule: ProcessingRule, onSave: (rule: ProcessingRule) => Promise<void>) {
+		super(app);
+		this.plugin = plugin;
+		this.rule = rule;
+		this.onSave = onSave;
+		// Create a working copy of the rule
+		this.workingRule = JSON.parse(JSON.stringify(rule));
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+
+		contentEl.empty();
+		contentEl.createEl('h2', { text: this.rule.id.startsWith('rule-') && this.rule.name === 'New Rule' ? 'Create Processing Rule' : 'Edit Processing Rule' });
+
+		// Rule name input
+		new Setting(contentEl)
+			.setName('Rule Name')
+			.setDesc('A descriptive name for this rule')
+			.addText(text => text
+				.setPlaceholder('Enter rule name')
+				.setValue(this.workingRule.name)
+				.onChange((value) => {
+					this.workingRule.name = value;
+				}));
+
+		// Regex pattern input
+		const patternSetting = new Setting(contentEl)
+			.setName('Pattern')
+			.setDesc('Regular expression pattern to match OCR text');
+
+		const patternTextarea = patternSetting.controlEl.createEl('textarea', {
+			placeholder: 'Enter regex pattern (e.g., Project:\\s*(.+))',
+			value: this.workingRule.pattern
+		});
+		patternTextarea.style.width = '100%';
+		patternTextarea.style.minHeight = '80px';
+		patternTextarea.style.fontFamily = 'monospace';
+		patternTextarea.style.fontSize = '0.9em';
+		patternTextarea.addEventListener('input', () => {
+			this.workingRule.pattern = patternTextarea.value;
+			// Validate pattern in real-time
+			this.validatePattern(contentEl);
+		});
+
+		// Pattern validation message container
+		const validationContainer = contentEl.createDiv({ cls: 'notebook-ocr-pattern-validation' });
+		validationContainer.style.marginTop = '5px';
+		validationContainer.style.marginBottom = '15px';
+
+		// Initial validation
+		this.validatePattern(contentEl);
+
+		// Action configuration section
+		contentEl.createEl('h3', { text: 'Actions' });
+		contentEl.createEl('p', {
+			text: 'Define what happens when this pattern matches OCR text. You can add multiple actions.',
+			cls: 'setting-item-description'
+		});
+
+		// Actions container
+		const actionsContainer = contentEl.createDiv({ cls: 'notebook-ocr-actions-container' });
+		actionsContainer.style.marginTop = '10px';
+		actionsContainer.style.marginBottom = '20px';
+
+		// Render existing actions
+		this.renderActions(actionsContainer);
+
+		// Add Action button
+		new Setting(contentEl)
+			.setName('Add Action')
+			.setDesc('Add a new action to this rule')
+			.addButton(button => button
+				.setButtonText('Add Action')
+				.onClick(() => {
+					// Create a new action with default values
+					const newAction: RuleAction = {
+						type: 'create-note',
+						config: {
+							folderPath: '',
+							titleTemplate: '',
+							frontmatter: {},
+							bodyTemplate: ''
+						} as CreateNoteConfig
+					};
+
+					this.workingRule.actions.push(newAction);
+					this.renderActions(actionsContainer);
+				}));
+
+		// Pattern tester section
+		const testerSection = contentEl.createDiv({ cls: 'notebook-ocr-pattern-tester' });
+		testerSection.style.marginTop = '20px';
+		testerSection.style.marginBottom = '20px';
+
+		// Collapsible header
+		const testerHeader = testerSection.createDiv({ cls: 'notebook-ocr-tester-header' });
+		testerHeader.style.display = 'flex';
+		testerHeader.style.alignItems = 'center';
+		testerHeader.style.cursor = 'pointer';
+		testerHeader.style.padding = '10px';
+		testerHeader.style.backgroundColor = 'var(--background-secondary)';
+		testerHeader.style.borderRadius = '5px';
+		testerHeader.style.marginBottom = '10px';
+
+		const testerToggle = testerHeader.createSpan({ text: '▶' });
+		testerToggle.style.marginRight = '10px';
+		testerToggle.style.fontSize = '12px';
+
+		testerHeader.createEl('h3', { text: 'Pattern Tester' });
+		testerHeader.style.margin = '0';
+
+		// Collapsible content
+		const testerContent = testerSection.createDiv({ cls: 'notebook-ocr-tester-content' });
+		testerContent.style.display = 'none';
+
+		// Toggle collapse/expand
+		let isExpanded = false;
+		testerHeader.addEventListener('click', () => {
+			isExpanded = !isExpanded;
+			testerContent.style.display = isExpanded ? 'block' : 'none';
+			testerToggle.textContent = isExpanded ? '▼' : '▶';
+		});
+
+		// Sample text input
+		const sampleTextSetting = new Setting(testerContent)
+			.setName('Sample Text')
+			.setDesc('Enter sample OCR text to test your pattern against');
+
+		const sampleTextarea = sampleTextSetting.controlEl.createEl('textarea', {
+			placeholder: 'Enter sample text here...\nFor example:\nProject: My New Project\nDue: 2024-12-31'
+		});
+		sampleTextarea.style.width = '100%';
+		sampleTextarea.style.minHeight = '100px';
+		sampleTextarea.style.fontFamily = 'monospace';
+		sampleTextarea.style.fontSize = '0.9em';
+
+		// Test button
+		const testButtonSetting = new Setting(testerContent)
+			.setName('Test Pattern')
+			.setDesc('Test the pattern against the sample text')
+			.addButton(button => button
+				.setButtonText('Test')
+				.setCta()
+				.onClick(() => {
+					this.testPattern(testerContent, sampleTextarea.value);
+				}));
+
+		// Results container
+		const resultsContainer = testerContent.createDiv({ cls: 'notebook-ocr-test-results' });
+		resultsContainer.style.marginTop = '15px';
+
+		// Save and Cancel buttons
+		const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+		buttonContainer.style.display = 'flex';
+		buttonContainer.style.gap = '10px';
+		buttonContainer.style.justifyContent = 'flex-end';
+		buttonContainer.style.marginTop = '20px';
+
+		const saveButton = buttonContainer.createEl('button', { text: 'Save' });
+		saveButton.classList.add('mod-cta');
+		saveButton.addEventListener('click', async () => {
+			// Validate before saving
+			if (!this.workingRule.name.trim()) {
+				new Notice('Please enter a rule name');
+				return;
+			}
+
+			if (!this.workingRule.pattern.trim()) {
+				new Notice('Please enter a pattern');
+				return;
+			}
+
+			// Validate regex
+			const validation = this.plugin.ruleEngine?.validateRegex(this.workingRule.pattern);
+			if (validation && !validation.valid) {
+				new Notice(`Invalid regex pattern: ${validation.error}`);
+				return;
+			}
+
+			// Save the rule
+			await this.onSave(this.workingRule);
+			new Notice(`Rule "${this.workingRule.name}" saved successfully`);
+			this.close();
+		});
+
+		const cancelButton = buttonContainer.createEl('button', { text: 'Cancel' });
+		cancelButton.addEventListener('click', () => {
+			this.close();
+		});
+	}
+
+	/**
+	 * Validate the regex pattern and display validation message
+	 */
+	private validatePattern(containerEl: HTMLElement) {
+		const validationContainer = containerEl.querySelector('.notebook-ocr-pattern-validation') as HTMLElement;
+		if (!validationContainer) return;
+
+		validationContainer.empty();
+
+		if (!this.workingRule.pattern.trim()) {
+			return;
+		}
+
+		const validation = this.plugin.ruleEngine?.validateRegex(this.workingRule.pattern);
+		if (validation) {
+			if (validation.valid) {
+				const successMsg = validationContainer.createDiv();
+				successMsg.textContent = '✓ Valid regex pattern';
+				successMsg.style.color = 'var(--text-success)';
+			} else {
+				const errorMsg = validationContainer.createDiv();
+				errorMsg.textContent = `✗ Invalid regex: ${validation.error}`;
+				errorMsg.style.color = 'var(--text-error)';
+			}
+		}
+	}
+
+	/**
+	 * Render the actions list
+	 */
+	private renderActions(container: HTMLElement) {
+		container.empty();
+
+		if (this.workingRule.actions.length === 0) {
+			container.createEl('p', {
+				text: 'No actions configured. Click "Add Action" to create one.',
+				cls: 'setting-item-description'
+			});
+			return;
+		}
+
+		this.workingRule.actions.forEach((action, index) => {
+			const actionItem = container.createDiv({ cls: 'notebook-ocr-action-item' });
+			actionItem.style.padding = '15px';
+			actionItem.style.border = '1px solid var(--background-modifier-border)';
+			actionItem.style.borderRadius = '5px';
+			actionItem.style.marginBottom = '10px';
+
+			// Action header
+			const actionHeader = actionItem.createDiv({ cls: 'notebook-ocr-action-header' });
+			actionHeader.style.display = 'flex';
+			actionHeader.style.justifyContent = 'space-between';
+			actionHeader.style.alignItems = 'center';
+			actionHeader.style.marginBottom = '10px';
+
+			const actionTitle = actionHeader.createEl('h4', { text: `Action ${index + 1}` });
+			actionTitle.style.margin = '0';
+
+			const removeButton = actionHeader.createEl('button', { text: 'Remove' });
+			removeButton.style.color = 'var(--text-error)';
+			removeButton.addEventListener('click', () => {
+				this.workingRule.actions.splice(index, 1);
+				this.renderActions(container);
+			});
+
+			// Action type dropdown
+			new Setting(actionItem)
+				.setName('Action Type')
+				.setDesc('What type of action to perform')
+				.addDropdown(dropdown => dropdown
+					.addOption('create-note', 'Create Note')
+					.addOption('insert-content', 'Insert Content')
+					.addOption('modify-frontmatter', 'Modify Frontmatter')
+					.setValue(action.type)
+					.onChange((value) => {
+						action.type = value as 'create-note' | 'insert-content' | 'modify-frontmatter';
+
+						// Reset config based on type
+						if (value === 'create-note') {
+							action.config = {
+								folderPath: '',
+								titleTemplate: '',
+								frontmatter: {},
+								bodyTemplate: ''
+							} as CreateNoteConfig;
+						} else if (value === 'insert-content') {
+							action.config = {
+								targetNote: '',
+								insertionPoint: { type: 'end' },
+								contentTemplate: ''
+							} as InsertContentConfig;
+						} else if (value === 'modify-frontmatter') {
+							action.config = {
+								targetNote: '',
+								properties: {},
+								appendToArrays: false
+							} as ModifyFrontmatterConfig;
+						}
+
+						this.renderActions(container);
+					}));
+
+			// Render configuration UI based on action type
+			if (action.type === 'create-note') {
+				this.renderCreateNoteConfig(actionItem, action.config as CreateNoteConfig);
+			} else if (action.type === 'insert-content') {
+				this.renderInsertContentConfig(actionItem, action.config as InsertContentConfig);
+			} else if (action.type === 'modify-frontmatter') {
+				this.renderModifyFrontmatterConfig(actionItem, action.config as ModifyFrontmatterConfig);
+			}
+		});
+	}
+
+	/**
+	 * Render Create Note configuration UI
+	 */
+	private renderCreateNoteConfig(container: HTMLElement, config: CreateNoteConfig) {
+		new Setting(container)
+			.setName('Folder Path')
+			.setDesc('Where to create the note (e.g., "Projects" or "Notes/Ideas")')
+			.addText(text => text
+				.setPlaceholder('Folder path')
+				.setValue(config.folderPath)
+				.onChange((value) => {
+					config.folderPath = value;
+				}));
+
+		new Setting(container)
+			.setName('Title Template')
+			.setDesc('Note title. Use {{1}}, {{2}}, etc. for capture groups')
+			.addText(text => text
+				.setPlaceholder('e.g., Project: {{1}}')
+				.setValue(config.titleTemplate)
+				.onChange((value) => {
+					config.titleTemplate = value;
+				}));
+
+		// Frontmatter properties
+		const frontmatterSetting = new Setting(container)
+			.setName('Frontmatter Properties')
+			.setDesc('YAML frontmatter as JSON (e.g., {"tags": "project", "status": "{{1}}"})')
+			.setClass('notebook-ocr-frontmatter-setting');
+
+		const frontmatterTextarea = frontmatterSetting.controlEl.createEl('textarea', {
+			placeholder: '{"tags": "project", "status": "{{1}}"}',
+			value: JSON.stringify(config.frontmatter, null, 2)
+		});
+		frontmatterTextarea.style.width = '100%';
+		frontmatterTextarea.style.minHeight = '60px';
+		frontmatterTextarea.style.fontFamily = 'monospace';
+		frontmatterTextarea.style.fontSize = '0.9em';
+		frontmatterTextarea.addEventListener('input', () => {
+			try {
+				config.frontmatter = JSON.parse(frontmatterTextarea.value);
+				frontmatterTextarea.style.borderColor = '';
+			} catch (e) {
+				frontmatterTextarea.style.borderColor = 'var(--text-error)';
+			}
+		});
+
+		// Body template
+		const bodySetting = new Setting(container)
+			.setName('Body Template')
+			.setDesc('Note content. Use {{1}}, {{2}}, etc. for capture groups');
+
+		const bodyTextarea = bodySetting.controlEl.createEl('textarea', {
+			placeholder: 'Note content here...\n\nCapture group 1: {{1}}',
+			value: config.bodyTemplate
+		});
+		bodyTextarea.style.width = '100%';
+		bodyTextarea.style.minHeight = '100px';
+		bodyTextarea.style.fontFamily = 'monospace';
+		bodyTextarea.style.fontSize = '0.9em';
+		bodyTextarea.addEventListener('input', () => {
+			config.bodyTemplate = bodyTextarea.value;
+		});
+	}
+
+	/**
+	 * Render Insert Content configuration UI
+	 */
+	private renderInsertContentConfig(container: HTMLElement, config: InsertContentConfig) {
+		new Setting(container)
+			.setName('Target Note')
+			.setDesc('Path to the note where content will be inserted. Can use {{1}}, {{2}}, etc.')
+			.addText(text => text
+				.setPlaceholder('e.g., Daily/2024-01-01.md or {{1}}.md')
+				.setValue(config.targetNote)
+				.onChange((value) => {
+					config.targetNote = value;
+				}));
+
+		// Insertion point type
+		new Setting(container)
+			.setName('Insertion Point')
+			.setDesc('Where to insert the content in the target note')
+			.addDropdown(dropdown => dropdown
+				.addOption('beginning', 'Beginning of note')
+				.addOption('end', 'End of note')
+				.addOption('before-pattern', 'Before pattern')
+				.addOption('after-pattern', 'After pattern')
+				.addOption('under-heading', 'Under heading')
+				.setValue(config.insertionPoint.type)
+				.onChange((value) => {
+					config.insertionPoint.type = value as InsertionPoint['type'];
+					this.renderActions(container.parentElement as HTMLElement);
+				}));
+
+		// Conditional fields based on insertion point type
+		if (config.insertionPoint.type === 'before-pattern' || config.insertionPoint.type === 'after-pattern') {
+			new Setting(container)
+				.setName('Pattern')
+				.setDesc('Regex pattern to find insertion point')
+				.addText(text => text
+					.setPlaceholder('e.g., ^## Tasks')
+					.setValue(config.insertionPoint.pattern || '')
+					.onChange((value) => {
+						config.insertionPoint.pattern = value;
+					}));
+		}
+
+		if (config.insertionPoint.type === 'under-heading') {
+			new Setting(container)
+				.setName('Heading')
+				.setDesc('Heading text (e.g., "## Tasks")')
+				.addText(text => text
+					.setPlaceholder('e.g., ## Tasks')
+					.setValue(config.insertionPoint.heading || '')
+					.onChange((value) => {
+						config.insertionPoint.heading = value;
+					}));
+		}
+
+		// Content template
+		const contentSetting = new Setting(container)
+			.setName('Content Template')
+			.setDesc('Content to insert. Use {{1}}, {{2}}, etc. for capture groups');
+
+		const contentTextarea = contentSetting.controlEl.createEl('textarea', {
+			placeholder: '- [ ] {{1}}\n  Due: {{2}}',
+			value: config.contentTemplate
+		});
+		contentTextarea.style.width = '100%';
+		contentTextarea.style.minHeight = '80px';
+		contentTextarea.style.fontFamily = 'monospace';
+		contentTextarea.style.fontSize = '0.9em';
+		contentTextarea.addEventListener('input', () => {
+			config.contentTemplate = contentTextarea.value;
+		});
+	}
+
+	/**
+	 * Render Modify Frontmatter configuration UI
+	 */
+	private renderModifyFrontmatterConfig(container: HTMLElement, config: ModifyFrontmatterConfig) {
+		new Setting(container)
+			.setName('Target Note')
+			.setDesc('Path to the note to modify. Can use {{1}}, {{2}}, etc.')
+			.addText(text => text
+				.setPlaceholder('e.g., Projects/{{1}}.md')
+				.setValue(config.targetNote)
+				.onChange((value) => {
+					config.targetNote = value;
+				}));
+
+		// Properties
+		const propertiesSetting = new Setting(container)
+			.setName('Properties')
+			.setDesc('Frontmatter properties to set as JSON (e.g., {"tags": "{{1}}", "status": "active"})');
+
+		const propertiesTextarea = propertiesSetting.controlEl.createEl('textarea', {
+			placeholder: '{"tags": "{{1}}", "status": "active"}',
+			value: JSON.stringify(config.properties, null, 2)
+		});
+		propertiesTextarea.style.width = '100%';
+		propertiesTextarea.style.minHeight = '60px';
+		propertiesTextarea.style.fontFamily = 'monospace';
+		propertiesTextarea.style.fontSize = '0.9em';
+		propertiesTextarea.addEventListener('input', () => {
+			try {
+				config.properties = JSON.parse(propertiesTextarea.value);
+				propertiesTextarea.style.borderColor = '';
+			} catch (e) {
+				propertiesTextarea.style.borderColor = 'var(--text-error)';
+			}
+		});
+
+		// Append to arrays option
+		new Setting(container)
+			.setName('Append to Arrays')
+			.setDesc('If enabled, values will be added to existing array properties instead of replacing them')
+			.addToggle(toggle => toggle
+				.setValue(config.appendToArrays)
+				.onChange((value) => {
+					config.appendToArrays = value;
+				}));
+	}
+
+	/**
+	 * Test the pattern against sample text and display results
+	 */
+	private testPattern(container: HTMLElement, sampleText: string) {
+		const resultsContainer = container.querySelector('.notebook-ocr-test-results') as HTMLElement;
+		if (!resultsContainer) return;
+
+		resultsContainer.empty();
+
+		// Validate pattern first
+		if (!this.workingRule.pattern.trim()) {
+			resultsContainer.createEl('p', {
+				text: 'Please enter a pattern to test.',
+				cls: 'setting-item-description'
+			});
+			return;
+		}
+
+		if (!sampleText.trim()) {
+			resultsContainer.createEl('p', {
+				text: 'Please enter sample text to test against.',
+				cls: 'setting-item-description'
+			});
+			return;
+		}
+
+		// Test the pattern
+		const testResult = this.plugin.ruleEngine?.testPattern(this.workingRule.pattern, sampleText);
+
+		if (!testResult) {
+			resultsContainer.createEl('p', {
+				text: 'Unable to test pattern. Rule engine not available.',
+				cls: 'setting-item-description'
+			});
+			return;
+		}
+
+		// Display validation errors
+		if (testResult.error) {
+			const errorDiv = resultsContainer.createDiv();
+			errorDiv.style.padding = '10px';
+			errorDiv.style.backgroundColor = 'var(--background-modifier-error)';
+			errorDiv.style.borderRadius = '5px';
+			errorDiv.style.marginBottom = '10px';
+
+			errorDiv.createEl('strong', { text: '✗ Invalid Regex Pattern' });
+			errorDiv.createEl('p', { text: testResult.error });
+			return;
+		}
+
+		// Display match result
+		const matchResultDiv = resultsContainer.createDiv();
+		matchResultDiv.style.padding = '10px';
+		matchResultDiv.style.borderRadius = '5px';
+		matchResultDiv.style.marginBottom = '10px';
+
+		if (testResult.matched) {
+			matchResultDiv.style.backgroundColor = 'var(--background-modifier-success)';
+			matchResultDiv.createEl('strong', { text: '✓ Pattern Matched!' });
+		} else {
+			matchResultDiv.style.backgroundColor = 'var(--background-modifier-error)';
+			matchResultDiv.createEl('strong', { text: '✗ Pattern Did Not Match' });
+			matchResultDiv.createEl('p', { text: 'The pattern did not match the sample text. Try adjusting your regex pattern.' });
+			return;
+		}
+
+		// Display capture groups
+		if (testResult.captureGroups.length > 0) {
+			const captureGroupsDiv = resultsContainer.createDiv();
+			captureGroupsDiv.style.padding = '10px';
+			captureGroupsDiv.style.border = '1px solid var(--background-modifier-border)';
+			captureGroupsDiv.style.borderRadius = '5px';
+			captureGroupsDiv.style.marginBottom = '10px';
+
+			captureGroupsDiv.createEl('strong', { text: 'Capture Groups:' });
+
+			const captureList = captureGroupsDiv.createEl('ul');
+			captureList.style.marginTop = '5px';
+			captureList.style.marginBottom = '0';
+
+			testResult.captureGroups.forEach((group, index) => {
+				const listItem = captureList.createEl('li');
+				listItem.style.fontFamily = 'monospace';
+				listItem.innerHTML = `<strong>{{${index + 1}}}</strong>: ${group}`;
+			});
+		} else {
+			const noCaptureDiv = resultsContainer.createDiv();
+			noCaptureDiv.style.padding = '10px';
+			noCaptureDiv.style.border = '1px solid var(--background-modifier-border)';
+			noCaptureDiv.style.borderRadius = '5px';
+			noCaptureDiv.style.marginBottom = '10px';
+
+			noCaptureDiv.createEl('p', {
+				text: 'No capture groups found. Add parentheses () to your pattern to capture parts of the match.',
+				cls: 'setting-item-description'
+			});
+		}
+
+		// Display template previews
+		if (testResult.captureGroups.length > 0 && this.workingRule.actions.length > 0) {
+			const previewDiv = resultsContainer.createDiv();
+			previewDiv.style.padding = '10px';
+			previewDiv.style.border = '1px solid var(--background-modifier-border)';
+			previewDiv.style.borderRadius = '5px';
+
+			previewDiv.createEl('strong', { text: 'Template Previews:' });
+
+			this.workingRule.actions.forEach((action, actionIndex) => {
+				const actionPreview = previewDiv.createDiv();
+				actionPreview.style.marginTop = '10px';
+				actionPreview.style.paddingLeft = '10px';
+				actionPreview.style.borderLeft = '2px solid var(--interactive-accent)';
+
+				actionPreview.createEl('em', { text: `Action ${actionIndex + 1}: ${action.type}` });
+
+				if (action.type === 'create-note') {
+					const config = action.config as CreateNoteConfig;
+					const titlePreview = actionPreview.createDiv();
+					titlePreview.style.marginTop = '5px';
+					titlePreview.innerHTML = `<strong>Title:</strong> <code>${RuleEngine.renderTemplate(config.titleTemplate, testResult.captureGroups)}</code>`;
+
+					if (config.bodyTemplate) {
+						const bodyPreview = actionPreview.createDiv();
+						bodyPreview.style.marginTop = '5px';
+						const renderedBody = RuleEngine.renderTemplate(config.bodyTemplate, testResult.captureGroups);
+						bodyPreview.innerHTML = `<strong>Body:</strong><pre style="margin-top: 5px; padding: 5px; background: var(--background-secondary); border-radius: 3px; white-space: pre-wrap;">${renderedBody}</pre>`;
+					}
+				} else if (action.type === 'insert-content') {
+					const config = action.config as InsertContentConfig;
+					const targetPreview = actionPreview.createDiv();
+					targetPreview.style.marginTop = '5px';
+					targetPreview.innerHTML = `<strong>Target:</strong> <code>${RuleEngine.renderTemplate(config.targetNote, testResult.captureGroups)}</code>`;
+
+					const contentPreview = actionPreview.createDiv();
+					contentPreview.style.marginTop = '5px';
+					const renderedContent = RuleEngine.renderTemplate(config.contentTemplate, testResult.captureGroups);
+					contentPreview.innerHTML = `<strong>Content:</strong><pre style="margin-top: 5px; padding: 5px; background: var(--background-secondary); border-radius: 3px; white-space: pre-wrap;">${renderedContent}</pre>`;
+				} else if (action.type === 'modify-frontmatter') {
+					const config = action.config as ModifyFrontmatterConfig;
+					const targetPreview = actionPreview.createDiv();
+					targetPreview.style.marginTop = '5px';
+					targetPreview.innerHTML = `<strong>Target:</strong> <code>${RuleEngine.renderTemplate(config.targetNote, testResult.captureGroups)}</code>`;
+
+					const propsPreview = actionPreview.createDiv();
+					propsPreview.style.marginTop = '5px';
+					propsPreview.innerHTML = '<strong>Properties:</strong>';
+
+					const propsList = propsPreview.createEl('ul');
+					propsList.style.marginTop = '5px';
+					propsList.style.marginBottom = '0';
+
+					for (const [key, value] of Object.entries(config.properties)) {
+						const propItem = propsList.createEl('li');
+						propItem.style.fontFamily = 'monospace';
+						propItem.innerHTML = `<strong>${key}:</strong> ${RuleEngine.renderTemplate(value, testResult.captureGroups)}`;
+					}
+				}
+			});
+		}
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
+/**
  * Settings tab for the plugin
  */
 class NotebookOCRSettingTab extends PluginSettingTab {
@@ -1796,11 +2466,227 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
-		// Processing Rules section placeholder
+		// Processing Rules section
 		containerEl.createEl('h3', { text: 'Processing Rules' });
 		containerEl.createEl('p', {
-			text: 'Processing rules configuration will be implemented in a future task.',
+			text: 'Define patterns to match OCR text and configure actions to take when patterns match.',
 			cls: 'setting-item-description'
 		});
+
+		// Add Rule button
+		new Setting(containerEl)
+			.setName('Add Processing Rule')
+			.setDesc('Create a new rule to process OCR text')
+			.addButton(button => button
+				.setButtonText('Add Rule')
+				.setCta()
+				.onClick(async () => {
+					// Create a new rule with default values
+					const newRule: ProcessingRule = {
+						id: this.generateRuleId(),
+						name: 'New Rule',
+						enabled: true,
+						priority: this.plugin.settings.processingRules.length,
+						pattern: '',
+						actions: []
+					};
+
+					// Open the rule editor modal
+					const modal = new RuleEditorModal(this.app, this.plugin, newRule, async (savedRule) => {
+						// Add the rule to settings
+						this.plugin.settings.processingRules.push(savedRule);
+						await this.plugin.saveSettings();
+
+						// Update rule engine
+						if (this.plugin.ruleEngine) {
+							this.plugin.ruleEngine.setRules(this.plugin.settings.processingRules);
+						}
+
+						// Refresh the display
+						this.display();
+					});
+
+					modal.open();
+				}));
+
+		// Display existing rules
+		if (this.plugin.settings.processingRules.length > 0) {
+			const rulesContainer = containerEl.createDiv({ cls: 'notebook-ocr-rules-container' });
+			rulesContainer.style.marginTop = '20px';
+
+			// Add drag-and-drop styling
+			rulesContainer.style.display = 'flex';
+			rulesContainer.style.flexDirection = 'column';
+			rulesContainer.style.gap = '10px';
+
+			this.plugin.settings.processingRules.forEach((rule, index) => {
+				const ruleItem = rulesContainer.createDiv({ cls: 'notebook-ocr-rule-item' });
+				ruleItem.style.padding = '10px';
+				ruleItem.style.border = '1px solid var(--background-modifier-border)';
+				ruleItem.style.borderRadius = '5px';
+				ruleItem.style.display = 'flex';
+				ruleItem.style.alignItems = 'center';
+				ruleItem.style.gap = '10px';
+				ruleItem.style.cursor = 'move';
+				ruleItem.draggable = true;
+
+				// Drag handle
+				const dragHandle = ruleItem.createSpan({ cls: 'notebook-ocr-drag-handle' });
+				dragHandle.textContent = '⋮⋮';
+				dragHandle.style.cursor = 'grab';
+				dragHandle.style.fontSize = '16px';
+				dragHandle.style.color = 'var(--text-muted)';
+
+				// Rule info container
+				const ruleInfo = ruleItem.createDiv({ cls: 'notebook-ocr-rule-info' });
+				ruleInfo.style.flex = '1';
+				ruleInfo.style.minWidth = '0';
+
+				// Rule name
+				const ruleName = ruleInfo.createDiv({ cls: 'notebook-ocr-rule-name' });
+				ruleName.textContent = rule.name;
+				ruleName.style.fontWeight = '500';
+				ruleName.style.marginBottom = '4px';
+
+				// Rule pattern preview
+				const rulePattern = ruleInfo.createDiv({ cls: 'notebook-ocr-rule-pattern' });
+				rulePattern.textContent = rule.pattern ? `Pattern: ${rule.pattern.substring(0, 50)}${rule.pattern.length > 50 ? '...' : ''}` : 'No pattern set';
+				rulePattern.style.fontSize = '0.9em';
+				rulePattern.style.color = 'var(--text-muted)';
+				rulePattern.style.fontFamily = 'monospace';
+
+				// Actions container
+				const actionsContainer = ruleItem.createDiv({ cls: 'notebook-ocr-rule-actions' });
+				actionsContainer.style.display = 'flex';
+				actionsContainer.style.gap = '5px';
+				actionsContainer.style.alignItems = 'center';
+
+				// Enable/disable toggle
+				const toggleContainer = actionsContainer.createDiv();
+				const toggle = new Setting(toggleContainer)
+					.addToggle(toggle => toggle
+						.setValue(rule.enabled)
+						.onChange(async (value) => {
+							rule.enabled = value;
+							await this.plugin.saveSettings();
+
+							// Update rule engine
+							if (this.plugin.ruleEngine) {
+								this.plugin.ruleEngine.setRules(this.plugin.settings.processingRules);
+							}
+						}));
+				toggle.settingEl.style.border = 'none';
+				toggle.settingEl.style.padding = '0';
+
+				// Edit button
+				const editButton = actionsContainer.createEl('button', { text: 'Edit' });
+				editButton.style.padding = '4px 8px';
+				editButton.addEventListener('click', () => {
+					const modal = new RuleEditorModal(this.app, this.plugin, rule, async (savedRule) => {
+						// Update the rule in settings
+						const ruleIndex = this.plugin.settings.processingRules.findIndex(r => r.id === savedRule.id);
+						if (ruleIndex !== -1) {
+							this.plugin.settings.processingRules[ruleIndex] = savedRule;
+							await this.plugin.saveSettings();
+
+							// Update rule engine
+							if (this.plugin.ruleEngine) {
+								this.plugin.ruleEngine.setRules(this.plugin.settings.processingRules);
+							}
+
+							// Refresh the display
+							this.display();
+						}
+					});
+
+					modal.open();
+				});
+
+				// Delete button
+				const deleteButton = actionsContainer.createEl('button', { text: 'Delete' });
+				deleteButton.style.padding = '4px 8px';
+				deleteButton.style.color = 'var(--text-error)';
+				deleteButton.addEventListener('click', async () => {
+					// Confirm deletion
+					if (confirm(`Are you sure you want to delete the rule "${rule.name}"?`)) {
+						// Remove the rule from settings
+						this.plugin.settings.processingRules = this.plugin.settings.processingRules.filter(r => r.id !== rule.id);
+						await this.plugin.saveSettings();
+
+						// Update rule engine
+						if (this.plugin.ruleEngine) {
+							this.plugin.ruleEngine.setRules(this.plugin.settings.processingRules);
+						}
+
+						// Refresh the display
+						this.display();
+					}
+				});
+
+				// Drag and drop handlers
+				ruleItem.addEventListener('dragstart', (e) => {
+					e.dataTransfer!.effectAllowed = 'move';
+					e.dataTransfer!.setData('text/plain', index.toString());
+					ruleItem.style.opacity = '0.5';
+				});
+
+				ruleItem.addEventListener('dragend', (e) => {
+					ruleItem.style.opacity = '1';
+				});
+
+				ruleItem.addEventListener('dragover', (e) => {
+					e.preventDefault();
+					e.dataTransfer!.dropEffect = 'move';
+					ruleItem.style.borderColor = 'var(--interactive-accent)';
+				});
+
+				ruleItem.addEventListener('dragleave', (e) => {
+					ruleItem.style.borderColor = 'var(--background-modifier-border)';
+				});
+
+				ruleItem.addEventListener('drop', async (e) => {
+					e.preventDefault();
+					ruleItem.style.borderColor = 'var(--background-modifier-border)';
+
+					const fromIndex = parseInt(e.dataTransfer!.getData('text/plain'));
+					const toIndex = index;
+
+					if (fromIndex !== toIndex) {
+						// Reorder the rules
+						const rules = [...this.plugin.settings.processingRules];
+						const [movedRule] = rules.splice(fromIndex, 1);
+						rules.splice(toIndex, 0, movedRule);
+
+						// Update priorities
+						rules.forEach((r, i) => {
+							r.priority = i;
+						});
+
+						this.plugin.settings.processingRules = rules;
+						await this.plugin.saveSettings();
+
+						// Update rule engine
+						if (this.plugin.ruleEngine) {
+							this.plugin.ruleEngine.setRules(this.plugin.settings.processingRules);
+						}
+
+						// Refresh the display
+						this.display();
+					}
+				});
+			});
+		} else {
+			containerEl.createEl('p', {
+				text: 'No processing rules configured. Click "Add Rule" to create your first rule.',
+				cls: 'setting-item-description'
+			});
+		}
+	}
+
+	/**
+	 * Generate a unique rule ID
+	 */
+	private generateRuleId(): string {
+		return `rule-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 	}
 }

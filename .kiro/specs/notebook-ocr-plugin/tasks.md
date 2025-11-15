@@ -208,8 +208,8 @@
     - Restart monitor when settings change
     - _Requirements: 8.1, 8.5_
 
-- [ ] 10. Implement rule management UI
-  - [ ] 10.1 Create rule list display in settings
+- [x] 10. Implement rule management UI
+  - [x] 10.1 Create rule list display in settings
     - Display list of processing rules with name and enabled status
     - Add enable/disable toggle for each rule
     - Add edit button for each rule
@@ -218,7 +218,7 @@
     - Implement drag-and-drop reordering for priority
     - _Requirements: 3.1, 3.4, 3.5_
 
-  - [ ] 10.2 Create RuleEditorModal class
+  - [x] 10.2 Create RuleEditorModal class
     - Create modal extending Obsidian's Modal class
     - Add input field for rule name
     - Add textarea for regex pattern with monospace font
@@ -227,7 +227,7 @@
     - Add save and cancel buttons
     - _Requirements: 3.2, 3.3_
 
-  - [ ] 10.3 Implement action configuration UI
+  - [x] 10.3 Implement action configuration UI
     - Create UI for selecting action type (dropdown)
     - Create conditional UI for CreateNoteConfig (folder, title template, frontmatter, body)
     - Create conditional UI for InsertContentConfig (target note, insertion point, content template)
@@ -236,7 +236,7 @@
     - Support removing actions from a rule
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 5.4, 6.1, 6.2, 6.3, 6.4_
 
-  - [ ] 10.4 Implement pattern tester UI
+  - [x] 10.4 Implement pattern tester UI
     - Add collapsible section in RuleEditorModal for pattern testing
     - Add textarea for sample text input
     - Add button to test pattern
