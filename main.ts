@@ -3083,13 +3083,27 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 
 		containerEl.createEl('h2', { text: 'Notebook OCR Plugin Settings' });
 
+		// Add introductory help text
+		const introDiv = containerEl.createDiv({ cls: 'setting-item-description' });
+		introDiv.style.marginBottom = '20px';
+		introDiv.style.padding = '10px';
+		introDiv.style.backgroundColor = 'var(--background-secondary)';
+		introDiv.style.borderRadius = '5px';
+		introDiv.innerHTML = `
+			<p><strong>Welcome to Notebook OCR Plugin!</strong></p>
+			<p>This plugin helps you digitize handwritten notebook pages using OCR (Optical Character Recognition) and automatically organize the extracted text using customizable rules.</p>
+			<p>💡 <strong>Quick Start:</strong> Use the camera icon in the ribbon or the command palette to import your first image. Unmatched text will be added to your daily note by default.</p>
+		`;
+
 		// OCR Backend Setting
+		containerEl.createEl('h3', { text: 'OCR Settings' });
+
 		new Setting(containerEl)
 			.setName('OCR Backend')
-			.setDesc('Choose between local (Tesseract.js) or cloud-based OCR')
+			.setDesc('Choose between local (Tesseract.js) or cloud-based OCR. Local processing is recommended for privacy and offline use.')
 			.addDropdown(dropdown => dropdown
-				.addOption('tesseract', 'Local (Tesseract.js)')
-				.addOption('cloud', 'Cloud API')
+				.addOption('tesseract', 'Local (Tesseract.js) - Recommended')
+				.addOption('cloud', 'Cloud API - Coming Soon')
 				.setValue(this.plugin.settings.ocrBackend)
 				.onChange(async (value) => {
 					this.plugin.settings.ocrBackend = value as 'tesseract' | 'cloud';
@@ -3097,11 +3111,31 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 					this.display(); // Refresh to show/hide cloud settings
 				}));
 
+		// Add additional help text for OCR backend
+		const ocrHelpDiv = containerEl.createDiv({ cls: 'setting-item-description' });
+		ocrHelpDiv.style.marginTop = '-10px';
+		ocrHelpDiv.style.marginBottom = '15px';
+		ocrHelpDiv.style.paddingLeft = '15px';
+		ocrHelpDiv.innerHTML = `
+			<strong>Local (Tesseract.js):</strong> Works offline, privacy-friendly, free. Moderate accuracy for handwriting.<br>
+			<strong>Cloud API:</strong> Better accuracy, faster processing. Requires internet and API key. (Feature coming soon)
+		`;
+
 		// Cloud API settings (shown only when cloud backend is selected)
 		if (this.plugin.settings.ocrBackend === 'cloud') {
+			const cloudWarningDiv = containerEl.createDiv({ cls: 'setting-item-description' });
+			cloudWarningDiv.style.padding = '10px';
+			cloudWarningDiv.style.backgroundColor = 'var(--background-modifier-error)';
+			cloudWarningDiv.style.borderRadius = '5px';
+			cloudWarningDiv.style.marginBottom = '15px';
+			cloudWarningDiv.innerHTML = `
+				<strong>⚠️ Cloud OCR is not yet implemented.</strong><br>
+				This feature is coming soon. The plugin will fall back to local Tesseract.js processing.
+			`;
+
 			new Setting(containerEl)
 				.setName('Cloud API Provider')
-				.setDesc('Select your cloud OCR provider')
+				.setDesc('Select your cloud OCR provider. Note: This feature is not yet available.')
 				.addDropdown(dropdown => dropdown
 					.addOption('openai', 'OpenAI Vision')
 					.addOption('google', 'Google Cloud Vision')
@@ -3113,7 +3147,7 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 
 			new Setting(containerEl)
 				.setName('Cloud API Key')
-				.setDesc('Enter your API key for the selected provider')
+				.setDesc('Enter your API key for the selected provider. Your API key is stored securely and never shared.')
 				.addText(text => text
 					.setPlaceholder('Enter API key')
 					.setValue(this.plugin.settings.cloudApiKey || '')
@@ -3126,9 +3160,15 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 		// Daily Note Settings
 		containerEl.createEl('h3', { text: 'Daily Note Settings' });
 
+		const dailyNoteHelpDiv = containerEl.createDiv({ cls: 'setting-item-description' });
+		dailyNoteHelpDiv.style.marginBottom = '15px';
+		dailyNoteHelpDiv.innerHTML = `
+			Configure how unmatched OCR text is handled. By default, text that doesn't match any processing rules will be inserted into your daily note.
+		`;
+
 		new Setting(containerEl)
 			.setName('Import Heading')
-			.setDesc('Heading under which imported notes will be placed in daily notes')
+			.setDesc('Heading under which imported notes will be placed in daily notes. If the heading doesn\'t exist, it will be created automatically. Leave empty to append to the end of the note.')
 			.addText(text => text
 				.setPlaceholder('## Imported Notes')
 				.setValue(this.plugin.settings.dailyNoteImportHeading)
@@ -3139,7 +3179,7 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Default Action')
-			.setDesc('What to do with OCR text when no processing rules match')
+			.setDesc('What to do with OCR text when no processing rules match. "Insert into Daily Note" adds text to today\'s note, "Discard" ignores it, "Prompt User" asks you each time.')
 			.addDropdown(dropdown => dropdown
 				.addOption('daily-note', 'Insert into Daily Note')
 				.addOption('discard', 'Discard')
@@ -3152,7 +3192,7 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Note Separator Pattern')
-			.setDesc('Regex pattern to detect separate notes (e.g., lines starting with - or *)')
+			.setDesc('Regex pattern to detect separate notes within OCR text. Lines matching this pattern will be formatted as bullet points. Example: "^[-*]\\s" matches lines starting with - or *')
 			.addText(text => text
 				.setPlaceholder('^[-*]\\s')
 				.setValue(this.plugin.settings.noteSeparatorPattern)
@@ -3164,9 +3204,15 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 		// Folder Monitoring Settings
 		containerEl.createEl('h3', { text: 'Folder Monitoring' });
 
+		const folderMonitorHelpDiv = containerEl.createDiv({ cls: 'setting-item-description' });
+		folderMonitorHelpDiv.style.marginBottom = '15px';
+		folderMonitorHelpDiv.innerHTML = `
+			Automatically process new images added to a specific folder. Perfect for workflows where you regularly drop scanned images into your vault.
+		`;
+
 		new Setting(containerEl)
 			.setName('Enable Folder Monitoring')
-			.setDesc('Automatically process new images in a monitored folder')
+			.setDesc('Automatically process new images in a monitored folder. The plugin will check for new images at the configured interval and process them using your rules.')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.folderMonitoringEnabled)
 				.onChange(async (value) => {
@@ -3191,7 +3237,7 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 		if (this.plugin.settings.folderMonitoringEnabled) {
 			new Setting(containerEl)
 				.setName('Monitored Folder')
-				.setDesc('Path to the folder to monitor for new images')
+				.setDesc('Path to the folder to monitor for new images (relative to vault root). The folder will be created if it doesn\'t exist. Example: "Inbox" or "Scans/Notebooks"')
 				.addText(text => text
 					.setPlaceholder('Inbox')
 					.setValue(this.plugin.settings.monitoredFolderPath)
@@ -3210,7 +3256,7 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 
 			new Setting(containerEl)
 				.setName('Monitoring Interval')
-				.setDesc('How often to check for new images')
+				.setDesc('How often to check for new images. "Hourly" checks every hour, "Daily" checks once per day. Use "Process folder now" command for immediate processing.')
 				.addDropdown(dropdown => dropdown
 					.addOption('hourly', 'Hourly')
 					.addOption('daily', 'Daily')
@@ -3230,7 +3276,7 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 
 			new Setting(containerEl)
 				.setName('Move Processed Images')
-				.setDesc('Move images to a separate folder after processing')
+				.setDesc('Move images to a separate folder after successful processing. This helps keep your monitored folder clean and prevents reprocessing the same images.')
 				.addToggle(toggle => toggle
 					.setValue(this.plugin.settings.moveProcessedImages)
 					.onChange(async (value) => {
@@ -3242,7 +3288,7 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 			if (this.plugin.settings.moveProcessedImages) {
 				new Setting(containerEl)
 					.setName('Processed Images Folder')
-					.setDesc('Path to folder for processed images')
+					.setDesc('Path to folder for processed images (relative to vault root). Processed images will be moved here to keep your inbox clean.')
 					.addText(text => text
 						.setPlaceholder('Processed')
 						.setValue(this.plugin.settings.processedImagesFolderPath)
@@ -3257,9 +3303,15 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 		if (PlatformHelper.isMobile()) {
 			containerEl.createEl('h3', { text: 'Mobile Settings' });
 
+			const mobileHelpDiv = containerEl.createDiv({ cls: 'setting-item-description' });
+			mobileHelpDiv.style.marginBottom = '15px';
+			mobileHelpDiv.innerHTML = `
+				📱 Mobile-specific settings for camera capture and image processing on iOS and Android devices.
+			`;
+
 			new Setting(containerEl)
 				.setName('Enable Camera Capture')
-				.setDesc('Enable camera capture command on mobile devices')
+				.setDesc('Enable camera capture command on mobile devices. This adds a "Capture and import" command that launches your device camera to capture and immediately process notebook pages.')
 				.addToggle(toggle => toggle
 					.setValue(this.plugin.settings.enableCameraCapture)
 					.onChange(async (value) => {
@@ -3274,7 +3326,7 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 
 			new Setting(containerEl)
 				.setName('Save Captures To')
-				.setDesc('Folder path for saving camera captures')
+				.setDesc('Folder path for saving camera captures (relative to vault root). Captured images will be saved here before processing.')
 				.addText(text => text
 					.setPlaceholder('Captures')
 					.setValue(this.plugin.settings.saveCapturesToFolder)
@@ -3286,15 +3338,28 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 
 		// Processing Rules section
 		containerEl.createEl('h3', { text: 'Processing Rules' });
-		containerEl.createEl('p', {
-			text: 'Define patterns to match OCR text and configure actions to take when patterns match.',
-			cls: 'setting-item-description'
-		});
+
+		const rulesHelpDiv = containerEl.createDiv({ cls: 'setting-item-description' });
+		rulesHelpDiv.style.marginBottom = '15px';
+		rulesHelpDiv.style.padding = '10px';
+		rulesHelpDiv.style.backgroundColor = 'var(--background-secondary)';
+		rulesHelpDiv.style.borderRadius = '5px';
+		rulesHelpDiv.innerHTML = `
+			<p><strong>Processing rules</strong> let you automatically organize OCR text based on patterns you define.</p>
+			<p><strong>How it works:</strong></p>
+			<ol style="margin: 5px 0; padding-left: 20px;">
+				<li>Define a regex pattern to match specific text (e.g., "Project: (.+)")</li>
+				<li>Configure actions to take when the pattern matches (create note, insert content, etc.)</li>
+				<li>Use capture groups ({{1}}, {{2}}, etc.) in templates to reuse matched text</li>
+			</ol>
+			<p>💡 <strong>Tip:</strong> Check out the <code>example-rules.json</code> file in the plugin folder for ready-to-use rule examples!</p>
+			<p>🧪 <strong>Testing:</strong> Use the pattern tester in each rule editor to validate your patterns before saving.</p>
+		`;
 
 		// Add Rule button
 		new Setting(containerEl)
 			.setName('Add Processing Rule')
-			.setDesc('Create a new rule to process OCR text')
+			.setDesc('Create a new rule to automatically process and organize OCR text based on patterns. Rules are tested in priority order (drag to reorder).')
 			.addButton(button => button
 				.setButtonText('Add Rule')
 				.setCta()
@@ -3494,10 +3559,23 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 				});
 			});
 		} else {
-			containerEl.createEl('p', {
-				text: 'No processing rules configured. Click "Add Rule" to create your first rule.',
-				cls: 'setting-item-description'
-			});
+			const noRulesDiv = containerEl.createDiv({ cls: 'setting-item-description' });
+			noRulesDiv.style.padding = '15px';
+			noRulesDiv.style.backgroundColor = 'var(--background-secondary)';
+			noRulesDiv.style.borderRadius = '5px';
+			noRulesDiv.style.textAlign = 'center';
+			noRulesDiv.innerHTML = `
+				<p><strong>No processing rules configured yet.</strong></p>
+				<p>Click "Add Rule" above to create your first rule and start automatically organizing your notebook content!</p>
+				<p style="margin-top: 10px;">📚 <strong>Need inspiration?</strong> Check out <code>example-rules.json</code> for common patterns like:</p>
+				<ul style="text-align: left; display: inline-block; margin: 5px 0;">
+					<li>Capturing hashtag ideas</li>
+					<li>Creating project task lists</li>
+					<li>Organizing meeting notes</li>
+					<li>Tracking expenses</li>
+					<li>And more!</li>
+				</ul>
+			`;
 		}
 	}
 

@@ -1,0 +1,284 @@
+{
+  "rules": [
+    {
+      "id": "rule-hashtag-ideas",
+      "name": "Hashtag Ideas",
+      "enabled": true,
+      "priority": 10,
+      "pattern": "#idea\\s+(.+)",
+      "description": "Captures lines starting with #idea and creates a new note in the Ideas folder",
+      "example": "#idea Automate daily review process",
+      "actions": [
+        {
+          "type": "create-note",
+          "config": {
+            "folderPath": "Ideas",
+            "titleTemplate": "{{1}}",
+            "frontmatter": {
+              "type": "idea",
+              "tags": "idea",
+              "created": "{{date}}"
+            },
+            "bodyTemplate": "# {{1}}\n\nCaptured from notebook on {{date}}\n\n## Description\n\n## Next Steps\n\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rule-project-tasks",
+      "name": "Project Tasks",
+      "enabled": true,
+      "priority": 9,
+      "pattern": "Project:\\s*(.+)\\nTask:\\s*(.+)",
+      "description": "Captures project tasks and adds them to the project's task list",
+      "example": "Project: Website Redesign\nTask: Update homepage layout",
+      "actions": [
+        {
+          "type": "insert-content",
+          "config": {
+            "targetNote": "Projects/{{1}}.md",
+            "insertionPoint": {
+              "type": "under-heading",
+              "heading": "## Tasks"
+            },
+            "contentTemplate": "- [ ] {{2}}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rule-meeting-notes",
+      "name": "Meeting Notes",
+      "enabled": true,
+      "priority": 8,
+      "pattern": "Meeting:\\s*(.+)\\nDate:\\s*(.+)\\nAttendees:\\s*(.+)",
+      "description": "Creates structured meeting notes with date and attendees",
+      "example": "Meeting: Q4 Planning\nDate: 2024-12-15\nAttendees: Alice, Bob, Carol",
+      "actions": [
+        {
+          "type": "create-note",
+          "config": {
+            "folderPath": "Meetings",
+            "titleTemplate": "{{1}} - {{2}}",
+            "frontmatter": {
+              "type": "meeting",
+              "date": "{{2}}",
+              "attendees": "{{3}}",
+              "tags": "meeting"
+            },
+            "bodyTemplate": "# {{1}}\n\n**Date**: {{2}}\n**Attendees**: {{3}}\n\n## Agenda\n\n## Notes\n\n## Action Items\n\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rule-book-notes",
+      "name": "Book Notes",
+      "enabled": true,
+      "priority": 7,
+      "pattern": "Book:\\s*(.+)\\nAuthor:\\s*(.+)\\nPage:\\s*(\\d+)\\n(.+)",
+      "description": "Captures book notes with page references",
+      "example": "Book: Thinking, Fast and Slow\nAuthor: Daniel Kahneman\nPage: 42\nInteresting insight about cognitive biases",
+      "actions": [
+        {
+          "type": "insert-content",
+          "config": {
+            "targetNote": "Books/{{1}}.md",
+            "insertionPoint": {
+              "type": "end"
+            },
+            "contentTemplate": "## Page {{3}}\n\n{{4}}\n\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rule-daily-tasks",
+      "name": "Daily Tasks",
+      "enabled": true,
+      "priority": 6,
+      "pattern": "^-\\s*(.+)$",
+      "description": "Captures task items (lines starting with -) and adds them to the task inbox",
+      "example": "- Buy groceries\n- Call dentist\n- Review project proposal",
+      "actions": [
+        {
+          "type": "insert-content",
+          "config": {
+            "targetNote": "Tasks/Inbox.md",
+            "insertionPoint": {
+              "type": "under-heading",
+              "heading": "## Captured Tasks"
+            },
+            "contentTemplate": "- [ ] {{1}}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rule-research-citations",
+      "name": "Research Citations",
+      "enabled": true,
+      "priority": 5,
+      "pattern": "Citation:\\s*(.+)\\nSource:\\s*(.+)\\nQuote:\\s*\"(.+)\"",
+      "description": "Captures research citations with source and quote",
+      "example": "Citation: Smith et al. 2023\nSource: Journal of Example Studies\nQuote: \"This is an important finding\"",
+      "actions": [
+        {
+          "type": "create-note",
+          "config": {
+            "folderPath": "Research/Citations",
+            "titleTemplate": "{{1}}",
+            "frontmatter": {
+              "type": "citation",
+              "source": "{{2}}",
+              "tags": "research, citation"
+            },
+            "bodyTemplate": "# {{1}}\n\n**Source**: {{2}}\n\n## Quote\n\n> {{3}}\n\n## Notes\n\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rule-contact-info",
+      "name": "Contact Information",
+      "enabled": true,
+      "priority": 4,
+      "pattern": "Contact:\\s*(.+)\\nEmail:\\s*([\\w._%+-]+@[\\w.-]+\\.[A-Za-z]{2,})\\nPhone:\\s*(.+)",
+      "description": "Captures contact information and creates a contact note",
+      "example": "Contact: John Doe\nEmail: john@example.com\nPhone: 555-1234",
+      "actions": [
+        {
+          "type": "create-note",
+          "config": {
+            "folderPath": "Contacts",
+            "titleTemplate": "{{1}}",
+            "frontmatter": {
+              "type": "contact",
+              "email": "{{2}}",
+              "phone": "{{3}}",
+              "tags": "contact"
+            },
+            "bodyTemplate": "# {{1}}\n\n**Email**: {{2}}\n**Phone**: {{3}}\n\n## Notes\n\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rule-recipe-capture",
+      "name": "Recipe Capture",
+      "enabled": true,
+      "priority": 3,
+      "pattern": "Recipe:\\s*(.+)\\nIngredients:\\s*(.+)\\nInstructions:\\s*(.+)",
+      "description": "Captures recipes with ingredients and instructions",
+      "example": "Recipe: Chocolate Chip Cookies\nIngredients: flour, sugar, butter, chocolate chips\nInstructions: Mix ingredients, bake at 350F for 12 minutes",
+      "actions": [
+        {
+          "type": "create-note",
+          "config": {
+            "folderPath": "Recipes",
+            "titleTemplate": "{{1}}",
+            "frontmatter": {
+              "type": "recipe",
+              "tags": "recipe, cooking"
+            },
+            "bodyTemplate": "# {{1}}\n\n## Ingredients\n\n{{2}}\n\n## Instructions\n\n{{3}}\n\n## Notes\n\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rule-goal-tracking",
+      "name": "Goal Tracking",
+      "enabled": true,
+      "priority": 2,
+      "pattern": "Goal:\\s*(.+)\\nDeadline:\\s*(.+)\\nStatus:\\s*(.+)",
+      "description": "Tracks goals with deadlines and status",
+      "example": "Goal: Complete project documentation\nDeadline: 2024-12-31\nStatus: In Progress",
+      "actions": [
+        {
+          "type": "create-note",
+          "config": {
+            "folderPath": "Goals",
+            "titleTemplate": "{{1}}",
+            "frontmatter": {
+              "type": "goal",
+              "deadline": "{{2}}",
+              "status": "{{3}}",
+              "tags": "goal"
+            },
+            "bodyTemplate": "# {{1}}\n\n**Deadline**: {{2}}\n**Status**: {{3}}\n\n## Description\n\n## Milestones\n\n## Progress\n\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rule-expense-tracking",
+      "name": "Expense Tracking",
+      "enabled": true,
+      "priority": 1,
+      "pattern": "Expense:\\s*\\$([\\d.]+)\\nCategory:\\s*(.+)\\nDescription:\\s*(.+)",
+      "description": "Tracks expenses with category and description",
+      "example": "Expense: $45.99\nCategory: Office Supplies\nDescription: Notebooks and pens",
+      "actions": [
+        {
+          "type": "insert-content",
+          "config": {
+            "targetNote": "Finance/Expenses.md",
+            "insertionPoint": {
+              "type": "under-heading",
+              "heading": "## Recent Expenses"
+            },
+            "contentTemplate": "- **${{1}}** - {{2}}: {{3}}"
+          }
+        },
+        {
+          "type": "modify-frontmatter",
+          "config": {
+            "targetNote": "Finance/Expenses.md",
+            "properties": {
+              "total_expenses": "{{1}}",
+              "categories": "{{2}}"
+            },
+            "appendToArrays": true
+          }
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "description": "These example rules demonstrate common patterns for organizing notebook content. To use them:",
+    "steps": [
+      "1. Open Obsidian Settings → Notebook OCR Plugin",
+      "2. Click 'Add Rule' for each rule you want to create",
+      "3. Copy the pattern, action type, and configuration from the examples above",
+      "4. Adjust folder paths and templates to match your vault structure",
+      "5. Use the pattern tester to validate each rule with sample text",
+      "6. Enable the rules you want to use"
+    ],
+    "tips": [
+      "Start with simple patterns and gradually add complexity",
+      "Use the pattern tester to validate your regex before saving",
+      "Adjust priorities to control which rules are tested first",
+      "Create folders in your vault before using them in rules",
+      "Use capture groups (parentheses) to extract parts of the matched text",
+      "Test with real handwritten samples to ensure OCR accuracy"
+    ]
+  },
+  "regex_patterns": {
+    "description": "Common regex patterns for notebook OCR",
+    "patterns": {
+      "hashtag": "#(\\w+)",
+      "email": "[\\w._%+-]+@[\\w.-]+\\.[A-Za-z]{2,}",
+      "phone": "\\(?\\d{3}\\)?[-.\\s]?\\d{3}[-.\\s]?\\d{4}",
+      "date_iso": "\\d{4}-\\d{2}-\\d{2}",
+      "date_us": "\\d{1,2}/\\d{1,2}/\\d{4}",
+      "time": "\\d{1,2}:\\d{2}\\s*(?:AM|PM|am|pm)?",
+      "url": "https?://[\\w.-]+(?:\\.[\\w.-]+)+[\\w\\-._~:/?#[\\]@!$&'()*+,;=]*",
+      "currency": "\\$?\\d+(?:\\.\\d{2})?",
+      "bullet_point": "^[-*•]\\s*(.+)$",
+      "numbered_list": "^\\d+\\.\\s*(.+)$",
+      "heading": "^#{1,6}\\s+(.+)$",
+      "key_value": "^([\\w\\s]+):\\s*(.+)$"
+    }
+  }
+}
