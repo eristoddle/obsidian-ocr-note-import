@@ -1,5 +1,24 @@
-import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, TFolder, Vault, normalizePath, Modal } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, TFolder, Vault, normalizePath, Modal, Platform } from 'obsidian';
 import { createWorker, Worker } from 'tesseract.js';
+
+/**
+ * Platform detection helper class
+ */
+class PlatformHelper {
+	/**
+	 * Check if running on a mobile device
+	 */
+	static isMobile(): boolean {
+		return Platform.isMobile;
+	}
+
+	/**
+	 * Check if camera access is available (mobile only)
+	 */
+	static hasCameraAccess(): boolean {
+		return Platform.isMobileApp && (Platform.isIosApp || Platform.isAndroidApp);
+	}
+}
 
 /**
  * OCR service interface
@@ -139,11 +158,11 @@ class TesseractOCRService implements OCRService {
 		}
 
 		try {
-			// Convert ArrayBuffer to Uint8Array for Tesseract
-			const imageArray = new Uint8Array(imageData);
+			// Convert ArrayBuffer to Blob for Tesseract
+			const blob = new Blob([imageData], { type: 'image/jpeg' });
 
 			// Perform OCR
-			const result = await this.worker.recognize(imageArray);
+			const result = await this.worker.recognize(blob);
 
 			return {
 				text: result.data.text,
@@ -1353,6 +1372,15 @@ export default class NotebookOCRPlugin extends Plugin {
 			name: 'Import from notebook images',
 			callback: () => this.openImagePicker()
 		});
+
+		// Add camera capture command (mobile only)
+		if (PlatformHelper.hasCameraAccess() && this.settings.enableCameraCapture) {
+			this.addCommand({
+				id: 'capture-and-import',
+				name: 'Capture and import',
+				callback: () => this.openCameraCapture()
+			});
+		}
 	}
 
 	/**
@@ -1377,6 +1405,92 @@ export default class NotebookOCRPlugin extends Plugin {
 
 		// Trigger the file picker
 		input.click();
+	}
+
+	/**
+	 * Open camera capture for mobile devices
+	 */
+	private async openCameraCapture(): Promise<void> {
+		// Check for camera access availability
+		if (!PlatformHelper.hasCameraAccess()) {
+			new Notice('Camera capture is only available on mobile devices. Please use the image picker instead.');
+			return;
+		}
+
+		if (!this.settings.enableCameraCapture) {
+			new Notice('Camera capture is disabled in settings.');
+			return;
+		}
+
+		// Create a file input element with camera capture
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = 'image/*';
+		input.capture = 'environment'; // Use rear camera by default
+		input.multiple = false; // Single capture at a time
+
+		// Handle file selection
+		input.onchange = async (e: Event) => {
+			const target = e.target as HTMLInputElement;
+			const files = target.files;
+
+			if (files && files.length > 0) {
+				const file = files[0];
+
+				try {
+					// Save captured image to configured folder
+					const savedFile = await this.saveCapturedImage(file);
+
+					// Process captured image immediately
+					await this.processImages([file]);
+
+					new Notice(`Image captured and processed successfully`);
+				} catch (error) {
+					console.error('Error processing captured image:', error);
+					new Notice(`Failed to process captured image: ${error instanceof Error ? error.message : 'Unknown error'}`);
+				}
+			}
+		};
+
+		// Trigger the camera
+		input.click();
+	}
+
+	/**
+	 * Save a captured image to the vault
+	 */
+	private async saveCapturedImage(file: File): Promise<TFile> {
+		// Normalize folder path
+		const folderPath = normalizePath(this.settings.saveCapturesToFolder);
+
+		// Ensure folder exists
+		const folder = this.app.vault.getAbstractFileByPath(folderPath);
+		if (!folder) {
+			await this.app.vault.createFolder(folderPath);
+		}
+
+		// Generate filename with timestamp
+		const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T').join('_').split('Z')[0];
+		const extension = file.name.split('.').pop() || 'jpg';
+		let fileName = `capture_${timestamp}.${extension}`;
+		let filePath = folderPath ? `${folderPath}/${fileName}` : fileName;
+
+		// Handle duplicate filenames
+		let counter = 1;
+		while (this.app.vault.getAbstractFileByPath(filePath)) {
+			fileName = `capture_${timestamp}_${counter}.${extension}`;
+			filePath = folderPath ? `${folderPath}/${fileName}` : fileName;
+			counter++;
+		}
+
+		// Read file as ArrayBuffer
+		const arrayBuffer = await file.arrayBuffer();
+
+		// Create file in vault
+		const createdFile = await this.app.vault.createBinary(filePath, arrayBuffer);
+
+		console.log(`Saved captured image to ${filePath}`);
+		return createdFile;
 	}
 
 	/**
@@ -2442,29 +2556,36 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 			}
 		}
 
-		// Mobile Settings
-		containerEl.createEl('h3', { text: 'Mobile Settings' });
+		// Mobile Settings (conditionally shown only on mobile platform)
+		if (PlatformHelper.isMobile()) {
+			containerEl.createEl('h3', { text: 'Mobile Settings' });
 
-		new Setting(containerEl)
-			.setName('Enable Camera Capture')
-			.setDesc('Enable camera capture command on mobile devices')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.enableCameraCapture)
-				.onChange(async (value) => {
-					this.plugin.settings.enableCameraCapture = value;
-					await this.plugin.saveSettings();
-				}));
+			new Setting(containerEl)
+				.setName('Enable Camera Capture')
+				.setDesc('Enable camera capture command on mobile devices')
+				.addToggle(toggle => toggle
+					.setValue(this.plugin.settings.enableCameraCapture)
+					.onChange(async (value) => {
+						this.plugin.settings.enableCameraCapture = value;
+						await this.plugin.saveSettings();
 
-		new Setting(containerEl)
-			.setName('Save Captures To')
-			.setDesc('Folder path for saving camera captures')
-			.addText(text => text
-				.setPlaceholder('Captures')
-				.setValue(this.plugin.settings.saveCapturesToFolder)
-				.onChange(async (value) => {
-					this.plugin.settings.saveCapturesToFolder = value;
-					await this.plugin.saveSettings();
-				}));
+						// Reload commands to add/remove camera capture command
+						// Note: In a real implementation, we would need to reload the plugin
+						// For now, just save the setting
+						new Notice('Please reload the plugin for camera capture changes to take effect');
+					}));
+
+			new Setting(containerEl)
+				.setName('Save Captures To')
+				.setDesc('Folder path for saving camera captures')
+				.addText(text => text
+					.setPlaceholder('Captures')
+					.setValue(this.plugin.settings.saveCapturesToFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.saveCapturesToFolder = value;
+						await this.plugin.saveSettings();
+					}));
+		}
 
 		// Processing Rules section
 		containerEl.createEl('h3', { text: 'Processing Rules' });
