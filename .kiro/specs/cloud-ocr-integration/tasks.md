@@ -27,14 +27,14 @@
     - Set includeOcrProviderMetadata default to false
     - _Requirements: 1.1, 6.1, 9.1_
 
-- [ ] 3. Implement OpenAI Vision OCR service
-  - [ ] 3.1 Create OpenAIVisionService class
+- [x] 3. Implement OpenAI Vision OCR service
+  - [x] 3.1 Create OpenAIVisionService class
     - Implement constructor accepting OpenAIConfig
     - Implement initialize() method with API key validation
     - Store apiKey, apiEndpoint, model, and maxTokens properties
     - _Requirements: 1.1, 1.2, 1.4_
 
-  - [ ] 3.2 Implement image processing for OpenAI
+  - [x] 3.2 Implement image processing for OpenAI
     - Implement processImage() method
     - Convert ArrayBuffer to base64 string
     - Construct chat completion request payload with vision content
@@ -45,7 +45,7 @@
     - Handle errors and return OCRResult with error message
     - _Requirements: 1.1, 3.1, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2, 4.3, 4.4_
 
-  - [ ] 3.3 Implement connection testing for OpenAI
+  - [x] 3.3 Implement connection testing for OpenAI
     - Implement testConnection() method
     - Create minimal test image (1x1 pixel PNG)
     - Send test request and measure response time
@@ -53,13 +53,13 @@
     - Handle errors and return failure result with error message
     - _Requirements: 7.1, 7.2, 7.3, 7.4_
 
-  - [ ] 3.4 Implement provider info for OpenAI
+  - [x] 3.4 Implement provider info for OpenAI
     - Implement getProviderInfo() method
     - Return OCRProviderInfo with name, requirements, cost estimate, pricing URL
     - Set accuracyRating to 'very-high'
     - _Requirements: 10.1, 10.2, 10.3_
 
-  - [ ] 3.5 Implement error handling for OpenAI
+  - [x] 3.5 Implement error handling for OpenAI
     - Implement formatError() helper method
     - Detect authentication errors (401, invalid key)
     - Detect rate limit errors (429)
@@ -67,7 +67,7 @@
     - Return user-friendly error messages
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
 
-  - [ ] 3.6 Implement helper methods for OpenAI
+  - [x] 3.6 Implement helper methods for OpenAI
     - Implement arrayBufferToBase64() conversion method
     - Implement createTestImage() method for connection testing
     - Implement isAvailable() method checking for API key

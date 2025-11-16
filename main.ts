@@ -364,6 +364,204 @@ class TesseractOCRService implements OCRService {
 }
 
 /**
+ * OpenAI Vision OCR service implementation
+ */
+class OpenAIVisionService implements OCRService {
+	private apiKey: string;
+	private apiEndpoint: string;
+	private model: string = 'gpt-4o';
+	private maxTokens: number = 1000;
+
+	/**
+	 * Constructor accepting OpenAI configuration
+	 */
+	constructor(config: OpenAIConfig) {
+		this.apiKey = config.apiKey;
+		this.apiEndpoint = config.customEndpoint || 'https://api.openai.com/v1';
+	}
+
+	/**
+	 * Initialize the OpenAI Vision service with API key validation
+	 */
+	async initialize(): Promise<void> {
+		// Validate API key format
+		if (!this.apiKey || !this.apiKey.startsWith('sk-')) {
+			throw new Error('Invalid OpenAI API key format');
+		}
+		console.log('OpenAI Vision OCR service initialized');
+	}
+
+	/**
+	 * Process an image and extract text using OpenAI Vision API
+	 */
+	async processImage(imageData: ArrayBuffer): Promise<OCRResult> {
+		try {
+			// Convert image to base64
+			const base64Image = this.arrayBufferToBase64(imageData);
+
+			// Construct request payload
+			const payload = {
+				model: this.model,
+				messages: [
+					{
+						role: 'user',
+						content: [
+							{
+								type: 'text',
+								text: 'Extract all text from this image. Return only the text content, preserving line breaks and formatting as much as possible.'
+							},
+							{
+								type: 'image_url',
+								image_url: {
+									url: `data:image/jpeg;base64,${base64Image}`
+								}
+							}
+						]
+					}
+				],
+				max_tokens: this.maxTokens
+			};
+
+			// Send request
+			const response = await this.sendRequest(payload);
+
+			// Parse response
+			const text = response.choices[0]?.message?.content || '';
+
+			return {
+				text: text.trim(),
+				confidence: 0.95,  // OpenAI doesn't provide confidence scores
+				provider: 'OpenAI Vision',
+				fallbackUsed: false
+			};
+		} catch (error) {
+			return {
+				text: '',
+				confidence: 0,
+				error: this.formatError(error),
+				provider: 'OpenAI Vision'
+			};
+		}
+	}
+
+	/**
+	 * Test connection to OpenAI API
+	 */
+	async testConnection(): Promise<ConnectionTestResult> {
+		const startTime = Date.now();
+		try {
+			// Send a minimal test request with a small test image
+			const testImage = this.createTestImage();
+			const result = await this.processImage(testImage);
+
+			if (result.error) {
+				return {
+					success: false,
+					error: result.error
+				};
+			}
+
+			return {
+				success: true,
+				responseTime: Date.now() - startTime
+			};
+		} catch (error) {
+			return {
+				success: false,
+				error: this.formatError(error)
+			};
+		}
+	}
+
+	/**
+	 * Get provider information
+	 */
+	getProviderInfo(): OCRProviderInfo {
+		return {
+			name: 'OpenAI Vision (GPT-4o)',
+			requiresApiKey: true,
+			requiresInternet: true,
+			estimatedCost: '$0.00265 per image (1024x1024)',
+			pricingUrl: 'https://openai.com/api/pricing/',
+			accuracyRating: 'very-high'
+		};
+	}
+
+	/**
+	 * Check if the service is available
+	 */
+	isAvailable(): boolean {
+		return !!this.apiKey;
+	}
+
+	/**
+	 * Send request to OpenAI API
+	 */
+	private async sendRequest(payload: any): Promise<any> {
+		const response = await fetch(`${this.apiEndpoint}/chat/completions`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'Authorization': `Bearer ${this.apiKey}`
+			},
+			body: JSON.stringify(payload)
+		});
+
+		if (!response.ok) {
+			const errorData = await response.json().catch(() => ({}));
+			throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+		}
+
+		return await response.json();
+	}
+
+	/**
+	 * Format error messages for user-friendly display
+	 */
+	private formatError(error: any): string {
+		const message = error.message || String(error);
+
+		if (message.includes('401') || message.includes('authentication') || message.includes('Incorrect API key')) {
+			return 'Invalid API key. Please check your OpenAI API key in settings.';
+		}
+		if (message.includes('429') || message.includes('rate limit')) {
+			return 'Rate limit exceeded. Please wait before trying again.';
+		}
+		if (message.includes('network') || message.includes('fetch') || message.includes('Failed to fetch')) {
+			return 'Network error. Please check your internet connection.';
+		}
+		return `OpenAI API error: ${message}`;
+	}
+
+	/**
+	 * Convert ArrayBuffer to base64 string
+	 */
+	private arrayBufferToBase64(buffer: ArrayBuffer): string {
+		const bytes = new Uint8Array(buffer);
+		let binary = '';
+		for (let i = 0; i < bytes.byteLength; i++) {
+			binary += String.fromCharCode(bytes[i]);
+		}
+		return btoa(binary);
+	}
+
+	/**
+	 * Create a minimal test image for connection testing
+	 */
+	private createTestImage(): ArrayBuffer {
+		// Create a minimal 1x1 pixel test image
+		// This is a base64-encoded 1x1 transparent PNG
+		const testBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+		const binary = atob(testBase64);
+		const bytes = new Uint8Array(binary.length);
+		for (let i = 0; i < binary.length; i++) {
+			bytes[i] = binary.charCodeAt(i);
+		}
+		return bytes.buffer;
+	}
+}
+
+/**
  * OCR service factory function
  * Creates and initializes the appropriate OCR service based on settings
  */
