@@ -191,9 +191,26 @@ interface GoogleCloudConfig {
  */
 interface PluginSettings {
 	// OCR Settings
-	ocrBackend: 'tesseract' | 'cloud';
-	cloudApiKey?: string;
-	cloudApiProvider?: 'openai' | 'google';
+	ocrBackend: 'tesseract' | 'openai' | 'google';
+
+	// OpenAI Configuration
+	openaiApiKey?: string;
+	openaiCustomEndpoint?: string;
+
+	// Google Cloud Configuration
+	googleCloudApiKey?: string;
+	googleCloudProjectId?: string;
+
+	// Fallback Configuration
+	enableOcrFallback: boolean;
+
+	// Image Preprocessing
+	enableImagePreprocessing: boolean;
+	maxImageDimension: number;
+	maxImageFileSize: number;  // in MB
+
+	// Metadata
+	includeOcrProviderMetadata: boolean;
 
 	// Daily Note Settings
 	dailyNoteImportHeading: string;
@@ -353,7 +370,7 @@ class TesseractOCRService implements OCRService {
 async function createOCRService(settings: PluginSettings): Promise<OCRService> {
 	let service: OCRService;
 
-	if (settings.ocrBackend === 'cloud') {
+	if (settings.ocrBackend === 'openai' || settings.ocrBackend === 'google') {
 		// Cloud OCR not yet implemented
 		console.warn('Cloud OCR backend not yet implemented, falling back to Tesseract');
 		service = new TesseractOCRService();
@@ -1550,6 +1567,11 @@ class DefaultActionModal extends Modal {
  */
 const DEFAULT_SETTINGS: PluginSettings = {
 	ocrBackend: 'tesseract',
+	enableOcrFallback: true,
+	enableImagePreprocessing: true,
+	maxImageDimension: 2048,
+	maxImageFileSize: 4,
+	includeOcrProviderMetadata: false,
 	dailyNoteImportHeading: '## Imported Notes',
 	processingRules: [],
 	defaultAction: 'daily-note',
@@ -3173,10 +3195,11 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 			.setDesc('Choose between local (Tesseract.js) or cloud-based OCR. Local processing is recommended for privacy and offline use.')
 			.addDropdown(dropdown => dropdown
 				.addOption('tesseract', 'Local (Tesseract.js) - Recommended')
-				.addOption('cloud', 'Cloud API - Coming Soon')
+				.addOption('openai', 'OpenAI Vision - Coming Soon')
+				.addOption('google', 'Google Cloud Vision - Coming Soon')
 				.setValue(this.plugin.settings.ocrBackend)
 				.onChange(async (value) => {
-					this.plugin.settings.ocrBackend = value as 'tesseract' | 'cloud';
+					this.plugin.settings.ocrBackend = value as 'tesseract' | 'openai' | 'google';
 					await this.plugin.saveSettings();
 					this.display(); // Refresh to show/hide cloud settings
 				}));
@@ -3188,11 +3211,11 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 		ocrHelpDiv.style.paddingLeft = '15px';
 		ocrHelpDiv.innerHTML = `
 			<strong>Local (Tesseract.js):</strong> Works offline, privacy-friendly, free. Moderate accuracy for handwriting.<br>
-			<strong>Cloud API:</strong> Better accuracy, faster processing. Requires internet and API key. (Feature coming soon)
+			<strong>Cloud APIs:</strong> Better accuracy, faster processing. Requires internet and API key. (Feature coming soon)
 		`;
 
 		// Cloud API settings (shown only when cloud backend is selected)
-		if (this.plugin.settings.ocrBackend === 'cloud') {
+		if (this.plugin.settings.ocrBackend === 'openai' || this.plugin.settings.ocrBackend === 'google') {
 			const cloudWarningDiv = containerEl.createDiv({ cls: 'setting-item-description' });
 			cloudWarningDiv.style.padding = '10px';
 			cloudWarningDiv.style.backgroundColor = 'var(--background-modifier-error)';
@@ -3202,29 +3225,6 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 				<strong>⚠️ Cloud OCR is not yet implemented.</strong><br>
 				This feature is coming soon. The plugin will fall back to local Tesseract.js processing.
 			`;
-
-			new Setting(containerEl)
-				.setName('Cloud API Provider')
-				.setDesc('Select your cloud OCR provider. Note: This feature is not yet available.')
-				.addDropdown(dropdown => dropdown
-					.addOption('openai', 'OpenAI Vision')
-					.addOption('google', 'Google Cloud Vision')
-					.setValue(this.plugin.settings.cloudApiProvider || 'openai')
-					.onChange(async (value) => {
-						this.plugin.settings.cloudApiProvider = value as 'openai' | 'google';
-						await this.plugin.saveSettings();
-					}));
-
-			new Setting(containerEl)
-				.setName('Cloud API Key')
-				.setDesc('Enter your API key for the selected provider. Your API key is stored securely and never shared.')
-				.addText(text => text
-					.setPlaceholder('Enter API key')
-					.setValue(this.plugin.settings.cloudApiKey || '')
-					.onChange(async (value) => {
-						this.plugin.settings.cloudApiKey = value;
-						await this.plugin.saveSettings();
-					}));
 		}
 
 		// Daily Note Settings

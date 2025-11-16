@@ -8,8 +8,8 @@
   - Create OpenAIConfig and GoogleCloudConfig interfaces
   - _Requirements: 1.1, 2.1, 7.1, 8.1, 10.1_
 
-- [ ] 2. Update plugin settings for cloud OCR
-  - [ ] 2.1 Add cloud OCR settings to PluginSettings interface
+- [x] 2. Update plugin settings for cloud OCR
+  - [x] 2.1 Add cloud OCR settings to PluginSettings interface
     - Add ocrBackend field with 'tesseract' | 'openai' | 'google' type
     - Add openaiApiKey, openaiCustomEndpoint fields
     - Add googleCloudApiKey, googleCloudProjectId fields
@@ -18,7 +18,7 @@
     - Add includeOcrProviderMetadata field
     - _Requirements: 1.1, 1.2, 2.1, 2.2, 6.1, 9.1, 9.2, 8.3_
 
-  - [ ] 2.2 Update DEFAULT_SETTINGS with cloud OCR defaults
+  - [x] 2.2 Update DEFAULT_SETTINGS with cloud OCR defaults
     - Set ocrBackend default to 'tesseract'
     - Set enableOcrFallback default to true
     - Set enableImagePreprocessing default to true
