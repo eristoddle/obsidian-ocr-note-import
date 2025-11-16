@@ -4,8 +4,12 @@ Transform your handwritten field notebook pages into searchable, organized digit
 
 ## Features
 
-- **Local OCR Processing**: Convert notebook images to text using Tesseract.js (works offline, privacy-friendly)
-  - ⚠️ **Note**: Tesseract works best with **printed text**. Handwriting recognition accuracy is limited (30-60% for clear block letters, lower for cursive)
+- **Multiple OCR Backends**: Choose the best OCR engine for your needs
+  - **Local (Tesseract.js)**: Works offline, privacy-friendly, excellent for printed text
+  - **OpenAI Vision (GPT-4o)**: Best-in-class handwriting recognition, including cursive
+  - **Google Cloud Vision**: High accuracy with generous free tier (1,000 images/month)
+- **Intelligent Fallback**: Automatically falls back to local OCR if cloud services fail
+- **Image Preprocessing**: Automatic resizing and compression for optimal cloud OCR performance
 - **Pattern-Based Routing**: Define custom regex patterns to automatically route notes to specific locations
 - **Flexible Actions**:
   - Create new notes with custom titles, frontmatter, and content
@@ -122,22 +126,70 @@ Add tags to existing notes based on keywords.
 
 **OCR Backend**: Choose between local (Tesseract.js) or cloud-based OCR
 
-- **Local (Tesseract.js)**:
-  - ✓ Works offline
-  - ✓ Privacy-friendly (no data sent externally)
-  - ✓ Free
-  - ✓ **Excellent for printed text** (90-95% accuracy)
-  - ✗ **Limited handwriting support** (30-60% for clear block letters, poor for cursive)
-  - ✗ Slower processing
-  - 💡 **Best for**: Typed documents, printed books, clear block-letter notes
+#### Local (Tesseract.js)
 
-- **Cloud API** (Future feature):
-  - ✓ **Much better accuracy for handwriting** (GPT-4 Vision, Google Cloud Vision)
-  - ✓ Faster processing
-  - ✓ Handles cursive and messy handwriting
-  - ✗ Requires internet connection
-  - ✗ Requires API key (costs money)
-  - ✗ Data sent to external service
+- ✓ Works offline
+- ✓ Privacy-friendly (no data sent externally)
+- ✓ Free
+- ✓ **Excellent for printed text** (90-95% accuracy)
+- ✗ **Limited handwriting support** (30-60% for clear block letters, poor for cursive)
+- ✗ Slower processing
+- 💡 **Best for**: Typed documents, printed books, clear block-letter notes
+
+#### OpenAI Vision (GPT-4o)
+
+- ✓ **Excellent accuracy for handwriting** (including cursive and messy writing)
+- ✓ Fast processing
+- ✓ Handles complex layouts and mixed content
+- ✗ Requires internet connection
+- ✗ Requires API key (costs ~$0.00265 per image)
+- ✗ Data sent to OpenAI servers
+- 💡 **Best for**: Handwritten notes, cursive writing, field notebooks
+
+**Setup**:
+1. Get an API key from [OpenAI Platform](https://platform.openai.com/api-keys)
+2. Go to Settings → Notebook OCR Plugin → OCR Backend
+3. Select "OpenAI Vision"
+4. Enter your API key
+5. Click "Test Connection" to verify
+6. [View pricing details](https://openai.com/api/pricing/)
+
+#### Google Cloud Vision
+
+- ✓ **Excellent accuracy for handwriting** (including cursive)
+- ✓ Fast processing
+- ✓ First 1,000 images/month free
+- ✗ Requires internet connection
+- ✗ Requires API key (costs $1.50 per 1,000 images after free tier)
+- ✗ Data sent to Google Cloud servers
+- 💡 **Best for**: High-volume processing, cost-conscious users
+
+**Setup**:
+1. Create a project in [Google Cloud Console](https://console.cloud.google.com/)
+2. Enable the Cloud Vision API
+3. Create an API key in Credentials
+4. Go to Settings → Notebook OCR Plugin → OCR Backend
+5. Select "Google Cloud Vision"
+6. Enter your API key
+7. Click "Test Connection" to verify
+8. [View pricing details](https://cloud.google.com/vision/pricing)
+
+#### Fallback Behavior
+
+When using cloud OCR, you can enable automatic fallback to local Tesseract if the cloud service fails:
+
+- **Enable Fallback to Local OCR**: If enabled, the plugin will automatically retry with Tesseract.js when cloud OCR fails (due to network issues, rate limits, or API errors)
+- **Notification**: You'll be notified when fallback is used
+- **Best Practice**: Keep fallback enabled for reliability, especially when working offline or with unreliable internet
+
+#### Image Preprocessing
+
+Cloud OCR services work best with optimized images. Enable preprocessing to automatically:
+
+- **Resize large images**: Images larger than the configured dimension (default: 2048px) are resized
+- **Compress files**: Images larger than the configured size (default: 4MB) are compressed
+- **Preserve originals**: Your original image files remain unchanged in the vault
+- **Reduce costs**: Smaller images = faster processing and lower API costs
 
 ### Daily Note Settings
 
@@ -241,6 +293,87 @@ Use the built-in pattern tester to validate your rules:
    - Extracted capture groups
    - Preview of rendered templates
 
+## Cloud OCR Setup Guide
+
+> 📖 **For detailed setup instructions with screenshots and troubleshooting, see the [Cloud OCR Setup Guide](CLOUD-OCR-SETUP.md)**
+
+### Getting an OpenAI API Key
+
+1. **Create an OpenAI Account**
+   - Visit [OpenAI Platform](https://platform.openai.com/)
+   - Sign up or log in to your account
+
+2. **Add Payment Method**
+   - Go to [Billing](https://platform.openai.com/account/billing)
+   - Add a payment method (required for API access)
+   - Consider setting usage limits to control costs
+
+3. **Create API Key**
+   - Navigate to [API Keys](https://platform.openai.com/api-keys)
+   - Click "Create new secret key"
+   - Give it a name (e.g., "Obsidian OCR")
+   - Copy the key (starts with `sk-`)
+   - ⚠️ **Important**: Save the key securely - you won't be able to see it again
+
+4. **Configure in Obsidian**
+   - Open Obsidian Settings → Notebook OCR Plugin
+   - Select "OpenAI Vision" as OCR Backend
+   - Paste your API key
+   - Click "Test Connection" to verify
+
+5. **Monitor Usage**
+   - Check usage at [OpenAI Usage Dashboard](https://platform.openai.com/account/usage)
+   - Typical cost: ~$0.00265 per image (1024x1024)
+   - Set up usage alerts to avoid surprises
+
+### Getting a Google Cloud Vision API Key
+
+1. **Create Google Cloud Account**
+   - Visit [Google Cloud Console](https://console.cloud.google.com/)
+   - Sign up or log in (free tier includes $300 credit)
+
+2. **Create a Project**
+   - Click "Select a project" → "New Project"
+   - Enter a project name (e.g., "Obsidian OCR")
+   - Click "Create"
+
+3. **Enable Cloud Vision API**
+   - Go to [APIs & Services](https://console.cloud.google.com/apis/library)
+   - Search for "Cloud Vision API"
+   - Click "Enable"
+
+4. **Create API Key**
+   - Go to [Credentials](https://console.cloud.google.com/apis/credentials)
+   - Click "Create Credentials" → "API Key"
+   - Copy the API key (starts with `AIza`)
+   - (Optional) Click "Restrict Key" to limit to Cloud Vision API only
+
+5. **Configure in Obsidian**
+   - Open Obsidian Settings → Notebook OCR Plugin
+   - Select "Google Cloud Vision" as OCR Backend
+   - Paste your API key
+   - (Optional) Enter your project ID
+   - Click "Test Connection" to verify
+
+6. **Monitor Usage**
+   - Check usage at [Cloud Console Billing](https://console.cloud.google.com/billing)
+   - Free tier: First 1,000 images/month
+   - After free tier: $1.50 per 1,000 images
+
+### Cost Comparison
+
+| Provider | Free Tier | Cost After Free Tier | Best For |
+|----------|-----------|---------------------|----------|
+| **Tesseract.js** | Unlimited | Free | Printed text, privacy-conscious users |
+| **OpenAI Vision** | None | ~$0.00265/image | Best handwriting accuracy, complex layouts |
+| **Google Cloud Vision** | 1,000/month | $1.50/1,000 images | High volume, budget-conscious |
+
+**Example Monthly Costs**:
+- 100 images/month: OpenAI $0.27, Google Free
+- 500 images/month: OpenAI $1.33, Google Free
+- 2,000 images/month: OpenAI $5.30, Google $1.50
+- 5,000 images/month: OpenAI $13.25, Google $6.00
+
 ## Commands
 
 The plugin adds the following commands to Obsidian:
@@ -332,6 +465,69 @@ The plugin adds the following commands to Obsidian:
 - Ensure capture group numbers match ({{1}} for first group, {{2}} for second, etc.)
 - Check for typos in placeholder syntax (must be exactly `{{1}}`, not `{1}` or `{{$1}}`)
 
+### Cloud OCR Authentication Failed
+
+**Problem**: "Invalid API key" or "Authentication failed" error
+
+**Solutions**:
+- **OpenAI**: Verify your API key starts with `sk-` and is copied correctly
+- **Google Cloud**: Verify your API key starts with `AIza` and is copied correctly
+- Check that you haven't accidentally included spaces or line breaks
+- Ensure your API key hasn't been revoked or expired
+- For OpenAI: Verify you have a payment method on file
+- For Google Cloud: Verify the Cloud Vision API is enabled for your project
+- Use the "Test Connection" button to diagnose the issue
+
+### Cloud OCR Rate Limit Exceeded
+
+**Problem**: "Rate limit exceeded" or "429 error"
+
+**Solutions**:
+- **OpenAI**: You've exceeded your rate limit (requests per minute)
+  - Wait a few minutes before trying again
+  - Consider upgrading your OpenAI plan for higher limits
+  - Process images in smaller batches
+- **Google Cloud**: You've exceeded your quota
+  - Check your quota limits in Google Cloud Console
+  - Wait until your quota resets (usually monthly)
+  - Request a quota increase if needed
+
+### Cloud OCR Network Errors
+
+**Problem**: "Network error" or "Connection failed"
+
+**Solutions**:
+- Check your internet connection
+- Verify you can access the provider's website (openai.com or cloud.google.com)
+- Check if your firewall or VPN is blocking API requests
+- Try disabling any proxy settings
+- If using a custom endpoint (OpenAI), verify the URL is correct
+- Enable fallback to local OCR for offline reliability
+
+### Cloud OCR Costs Higher Than Expected
+
+**Problem**: Unexpected API charges
+
+**Solutions**:
+- **Monitor usage**: Check your provider's usage dashboard regularly
+- **Set up alerts**: Configure billing alerts in your provider's console
+- **Enable preprocessing**: Reduce image sizes to lower costs
+- **Use fallback wisely**: Fallback to Tesseract can save costs for simple images
+- **Batch processing**: Process multiple images at once to avoid repeated small charges
+- **Consider Google Cloud**: Free tier of 1,000 images/month may be sufficient
+- **Set usage limits**: Configure spending limits in your provider's billing settings
+
+### Fallback Not Working
+
+**Problem**: Cloud OCR fails but doesn't fall back to Tesseract
+
+**Solutions**:
+- Verify "Enable Fallback to Local OCR" is enabled in settings
+- Check that Tesseract is properly initialized (try local OCR directly)
+- Look for error messages in the developer console (Ctrl+Shift+I)
+- Ensure the image format is supported by Tesseract
+- Try reloading the plugin
+
 ## Development
 
 ### Prerequisites
@@ -394,14 +590,17 @@ The plugin is organized into several key components:
 
 ## Roadmap
 
-- [ ] Cloud OCR integration (OpenAI Vision, Google Cloud Vision)
+- [x] Cloud OCR integration (OpenAI Vision, Google Cloud Vision)
+- [x] Image preprocessing (resizing, compression)
+- [x] Automatic fallback between OCR providers
 - [ ] Batch processing UI with progress tracking
-- [ ] Image preprocessing (rotation, contrast adjustment)
+- [ ] Advanced image preprocessing (rotation, contrast adjustment)
 - [ ] PDF support
 - [ ] Rule templates/presets for common use cases
 - [ ] OCR result editing before processing
 - [ ] Export/import rule configurations
 - [ ] AI-powered pattern suggestions
+- [ ] Additional cloud providers (Azure Computer Vision, AWS Textract)
 
 ## Contributing
 
@@ -425,6 +624,7 @@ MIT License - see LICENSE file for details
 
 ## Additional Resources
 
+- **[Cloud OCR Setup Guide](CLOUD-OCR-SETUP.md)**: Complete guide to setting up OpenAI and Google Cloud Vision
 - **[Handwriting OCR Tips](HANDWRITING-TIPS.md)**: Comprehensive guide to improving handwriting recognition
 - **[Architecture Documentation](ARCHITECTURE.md)**: Technical deep-dive for developers
 - **[Debugging Guide](DEBUGGING.md)**: Troubleshooting OCR issues

@@ -20,3 +20,4 @@ Thumbs.db
 
 # TypeScript cache
 *.tsbuildinfo
+data.json

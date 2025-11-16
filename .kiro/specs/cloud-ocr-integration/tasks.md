@@ -264,8 +264,8 @@
     - Use ErrorMessageFormatter for error notifications
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 6.3, 8.1_
 
-- [ ] 11. Update documentation
-  - [ ] 11.1 Update README.md
+- [x] 11. Update documentation
+  - [x] 11.1 Update README.md
     - Add cloud OCR section explaining OpenAI and Google Cloud options
     - Document API key setup for each provider
     - Add cost information and links to pricing pages
@@ -273,13 +273,13 @@
     - Add troubleshooting section for cloud OCR errors
     - _Requirements: All_
 
-  - [ ] 11.2 Add inline code documentation
+  - [x] 11.2 Add inline code documentation
     - Add JSDoc comments to all cloud OCR classes and methods
     - Document API request/response formats
     - Add usage examples for each cloud provider
     - _Requirements: All_
 
-  - [ ] 11.3 Create cloud OCR setup guide
+  - [x] 11.3 Create cloud OCR setup guide
     - Document how to obtain OpenAI API key
     - Document how to obtain Google Cloud Vision API key
     - Provide step-by-step setup instructions

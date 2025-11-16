@@ -430,7 +430,47 @@ class TesseractOCRService implements OCRService {
 }
 
 /**
- * OpenAI Vision OCR service implementation
+ * OpenAI Vision OCR service implementation using GPT-4o with vision capabilities.
+ *
+ * This service provides high-accuracy OCR for handwritten text, including cursive writing.
+ * It uses the OpenAI Chat Completions API with vision support to extract text from images.
+ *
+ * @example
+ * ```typescript
+ * const service = new OpenAIVisionService({
+ *   apiKey: 'sk-...',
+ *   customEndpoint: 'https://api.openai.com/v1' // optional
+ * });
+ * await service.initialize();
+ * const result = await service.processImage(imageBuffer);
+ * console.log(result.text);
+ * ```
+ *
+ * API Request Format:
+ * ```json
+ * {
+ *   "model": "gpt-4o",
+ *   "messages": [{
+ *     "role": "user",
+ *     "content": [
+ *       { "type": "text", "text": "Extract all text..." },
+ *       { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,..." } }
+ *     ]
+ *   }],
+ *   "max_tokens": 1000
+ * }
+ * ```
+ *
+ * API Response Format:
+ * ```json
+ * {
+ *   "choices": [{
+ *     "message": {
+ *       "content": "Extracted text from the image..."
+ *     }
+ *   }]
+ * }
+ * ```
  */
 class OpenAIVisionService implements OCRService {
 	private apiKey: string;
@@ -439,7 +479,11 @@ class OpenAIVisionService implements OCRService {
 	private maxTokens: number = 1000;
 
 	/**
-	 * Constructor accepting OpenAI configuration
+	 * Creates a new OpenAI Vision OCR service instance.
+	 *
+	 * @param config - Configuration object containing API key and optional custom endpoint
+	 * @param config.apiKey - OpenAI API key (must start with 'sk-')
+	 * @param config.customEndpoint - Optional custom API endpoint (defaults to https://api.openai.com/v1)
 	 */
 	constructor(config: OpenAIConfig) {
 		this.apiKey = config.apiKey;
@@ -447,7 +491,9 @@ class OpenAIVisionService implements OCRService {
 	}
 
 	/**
-	 * Initialize the OpenAI Vision service with API key validation
+	 * Initializes the OpenAI Vision service and validates the API key format.
+	 *
+	 * @throws {Error} If the API key is missing or doesn't start with 'sk-'
 	 */
 	async initialize(): Promise<void> {
 		// Validate API key format
@@ -458,7 +504,25 @@ class OpenAIVisionService implements OCRService {
 	}
 
 	/**
-	 * Process an image and extract text using OpenAI Vision API
+	 * Processes an image and extracts text using OpenAI Vision API.
+	 *
+	 * The image is converted to base64 and sent to the OpenAI Chat Completions API
+	 * with a vision-enabled model (GPT-4o). The API analyzes the image and returns
+	 * the extracted text while preserving formatting and line breaks.
+	 *
+	 * @param imageData - Image data as ArrayBuffer (any format supported by browsers)
+	 * @returns Promise resolving to OCRResult with extracted text, confidence, and provider info
+	 *
+	 * @example
+	 * ```typescript
+	 * const imageBuffer = await file.arrayBuffer();
+	 * const result = await service.processImage(imageBuffer);
+	 * if (result.error) {
+	 *   console.error('OCR failed:', result.error);
+	 * } else {
+	 *   console.log('Extracted text:', result.text);
+	 * }
+	 * ```
 	 */
 	async processImage(imageData: ArrayBuffer): Promise<OCRResult> {
 		try {
@@ -511,7 +575,22 @@ class OpenAIVisionService implements OCRService {
 	}
 
 	/**
-	 * Test connection to OpenAI API
+	 * Tests the connection to OpenAI API by sending a minimal test request.
+	 *
+	 * Sends a 1x1 pixel test image to verify API credentials and connectivity.
+	 * Measures response time for diagnostic purposes.
+	 *
+	 * @returns Promise resolving to ConnectionTestResult with success status and response time
+	 *
+	 * @example
+	 * ```typescript
+	 * const result = await service.testConnection();
+	 * if (result.success) {
+	 *   console.log(`Connection successful (${result.responseTime}ms)`);
+	 * } else {
+	 *   console.error('Connection failed:', result.error);
+	 * }
+	 * ```
 	 */
 	async testConnection(): Promise<ConnectionTestResult> {
 		const startTime = Date.now();
@@ -646,7 +725,44 @@ class OpenAIVisionService implements OCRService {
 }
 
 /**
- * Google Cloud Vision OCR service implementation
+ * Google Cloud Vision OCR service implementation using Cloud Vision API.
+ *
+ * This service provides high-accuracy OCR for handwritten and printed text.
+ * It uses the Google Cloud Vision API's TEXT_DETECTION feature to extract text from images.
+ * Includes a generous free tier of 1,000 images per month.
+ *
+ * @example
+ * ```typescript
+ * const service = new GoogleCloudVisionService({
+ *   apiKey: 'AIza...',
+ *   projectId: 'my-project-123' // optional
+ * });
+ * await service.initialize();
+ * const result = await service.processImage(imageBuffer);
+ * console.log(result.text, result.confidence);
+ * ```
+ *
+ * API Request Format:
+ * ```json
+ * {
+ *   "requests": [{
+ *     "image": { "content": "base64_encoded_image..." },
+ *     "features": [{ "type": "TEXT_DETECTION", "maxResults": 1 }]
+ *   }]
+ * }
+ * ```
+ *
+ * API Response Format:
+ * ```json
+ * {
+ *   "responses": [{
+ *     "textAnnotations": [{
+ *       "description": "Extracted text...",
+ *       "confidence": 0.95
+ *     }]
+ *   }]
+ * }
+ * ```
  */
 class GoogleCloudVisionService implements OCRService {
 	private apiKey: string;
@@ -654,7 +770,11 @@ class GoogleCloudVisionService implements OCRService {
 	private apiEndpoint: string = 'https://vision.googleapis.com/v1';
 
 	/**
-	 * Constructor accepting Google Cloud configuration
+	 * Creates a new Google Cloud Vision OCR service instance.
+	 *
+	 * @param config - Configuration object containing API key and optional project ID
+	 * @param config.apiKey - Google Cloud API key (starts with 'AIza')
+	 * @param config.projectId - Optional Google Cloud project ID
 	 */
 	constructor(config: GoogleCloudConfig) {
 		this.apiKey = config.apiKey;
@@ -672,7 +792,25 @@ class GoogleCloudVisionService implements OCRService {
 	}
 
 	/**
-	 * Process an image and extract text using Google Cloud Vision API
+	 * Processes an image and extracts text using Google Cloud Vision API.
+	 *
+	 * The image is converted to base64 and sent to the Cloud Vision API with
+	 * TEXT_DETECTION feature. The API returns text annotations with confidence scores.
+	 *
+	 * @param imageData - Image data as ArrayBuffer (any format supported by Cloud Vision)
+	 * @returns Promise resolving to OCRResult with extracted text, confidence score, and provider info
+	 *
+	 * @example
+	 * ```typescript
+	 * const imageBuffer = await file.arrayBuffer();
+	 * const result = await service.processImage(imageBuffer);
+	 * if (result.error) {
+	 *   console.error('OCR failed:', result.error);
+	 * } else {
+	 *   console.log('Text:', result.text);
+	 *   console.log('Confidence:', result.confidence);
+	 * }
+	 * ```
 	 */
 	async processImage(imageData: ArrayBuffer): Promise<OCRResult> {
 		try {
@@ -730,7 +868,22 @@ class GoogleCloudVisionService implements OCRService {
 	}
 
 	/**
-	 * Test connection to Google Cloud Vision API
+	 * Tests the connection to Google Cloud Vision API by sending a minimal test request.
+	 *
+	 * Sends a 1x1 pixel test image to verify API credentials and connectivity.
+	 * Measures response time for diagnostic purposes.
+	 *
+	 * @returns Promise resolving to ConnectionTestResult with success status and response time
+	 *
+	 * @example
+	 * ```typescript
+	 * const result = await service.testConnection();
+	 * if (result.success) {
+	 *   console.log(`Connection successful (${result.responseTime}ms)`);
+	 * } else {
+	 *   console.error('Connection failed:', result.error);
+	 * }
+	 * ```
 	 */
 	async testConnection(): Promise<ConnectionTestResult> {
 		const startTime = Date.now();
@@ -865,8 +1018,25 @@ class GoogleCloudVisionService implements OCRService {
 }
 
 /**
- * OCR Fallback Handler
- * Handles fallback from primary OCR service to fallback service on failure
+ * OCR Fallback Handler - Provides automatic fallback between OCR services.
+ *
+ * This handler wraps a primary OCR service (typically cloud-based) and a fallback
+ * service (typically local Tesseract). If the primary service fails due to network
+ * issues, rate limits, or API errors, it automatically retries with the fallback service.
+ *
+ * @example
+ * ```typescript
+ * const primary = new OpenAIVisionService({ apiKey: 'sk-...' });
+ * const fallback = new TesseractOCRService();
+ * const handler = new OCRFallbackHandler(primary, fallback, true);
+ *
+ * await handler.initialize();
+ * const result = await handler.processImage(imageBuffer);
+ *
+ * if (result.fallbackUsed) {
+ *   console.log('Primary OCR failed, used fallback');
+ * }
+ * ```
  */
 class OCRFallbackHandler implements OCRService {
 	private primaryService: OCRService;
@@ -874,7 +1044,11 @@ class OCRFallbackHandler implements OCRService {
 	private fallbackEnabled: boolean;
 
 	/**
-	 * Constructor accepting primary service, fallback service, and enabled flag
+	 * Creates a new OCR fallback handler.
+	 *
+	 * @param primaryService - The primary OCR service to use (e.g., cloud provider)
+	 * @param fallbackService - The fallback OCR service to use on primary failure (e.g., Tesseract)
+	 * @param fallbackEnabled - Whether to enable automatic fallback on primary failure
 	 */
 	constructor(
 		primaryService: OCRService,
@@ -897,8 +1071,23 @@ class OCRFallbackHandler implements OCRService {
 	}
 
 	/**
-	 * Process image with fallback logic
-	 * Attempts processing with primary service first, falls back if enabled and primary fails
+	 * Processes an image with automatic fallback logic.
+	 *
+	 * First attempts to process the image with the primary service. If the primary
+	 * service fails and fallback is enabled, automatically retries with the fallback
+	 * service. The result includes a `fallbackUsed` flag to indicate which service
+	 * was ultimately successful.
+	 *
+	 * @param imageData - Image data as ArrayBuffer
+	 * @returns Promise resolving to OCRResult with fallbackUsed flag set if fallback was triggered
+	 *
+	 * @example
+	 * ```typescript
+	 * const result = await handler.processImage(imageBuffer);
+	 * if (result.fallbackUsed) {
+	 *   console.warn('Primary OCR failed, used fallback service');
+	 * }
+	 * ```
 	 */
 	async processImage(imageData: ArrayBuffer): Promise<OCRResult> {
 		// Try primary service first
@@ -965,8 +1154,21 @@ class OCRFallbackHandler implements OCRService {
 }
 
 /**
- * Image Preprocessor
- * Handles image resizing and compression before sending to cloud OCR services
+ * Image Preprocessor - Optimizes images for cloud OCR services.
+ *
+ * Automatically resizes and compresses images that exceed configured limits before
+ * sending to cloud OCR APIs. This reduces API costs, improves processing speed,
+ * and ensures images meet API size requirements. Original images in the vault
+ * remain unchanged.
+ *
+ * @example
+ * ```typescript
+ * const preprocessor = new ImagePreprocessor(2048, 4); // 2048px, 4MB
+ * const optimizedImage = await preprocessor.preprocess(largeImageBuffer);
+ *
+ * // optimizedImage is now <= 2048px in either dimension and <= 4MB
+ * const result = await ocrService.processImage(optimizedImage);
+ * ```
  */
 class ImagePreprocessor {
 	private maxDimension: number;
@@ -983,9 +1185,23 @@ class ImagePreprocessor {
 	}
 
 	/**
-	 * Preprocess image by resizing and compressing if needed
-	 * @param imageData - Image data as ArrayBuffer
-	 * @returns Preprocessed image data as ArrayBuffer
+	 * Preprocesses an image by resizing and compressing if it exceeds configured limits.
+	 *
+	 * If the image is within both dimension and file size limits, returns the original
+	 * image unchanged. Otherwise, resizes to fit within maxDimension while maintaining
+	 * aspect ratio, then compresses to JPEG format with iterative quality reduction
+	 * until the file size is under maxFileSize.
+	 *
+	 * @param imageData - Original image data as ArrayBuffer
+	 * @returns Promise resolving to preprocessed image data as ArrayBuffer (JPEG format if modified)
+	 *
+	 * @example
+	 * ```typescript
+	 * // Image is 4000x3000 pixels, 8MB
+	 * const preprocessor = new ImagePreprocessor(2048, 4);
+	 * const optimized = await preprocessor.preprocess(imageData);
+	 * // Result is 2048x1536 pixels, ~3.5MB JPEG
+	 * ```
 	 */
 	async preprocess(imageData: ArrayBuffer): Promise<ArrayBuffer> {
 		// Check if preprocessing is needed
@@ -1119,8 +1335,27 @@ class ImagePreprocessor {
 }
 
 /**
- * OCR service factory function
- * Creates and initializes the appropriate OCR service based on settings
+ * OCR service factory function - Creates the appropriate OCR service based on settings.
+ *
+ * This factory function instantiates the correct OCR service implementation based on
+ * the configured backend (Tesseract, OpenAI Vision, or Google Cloud Vision). It validates
+ * that required API keys are present for cloud providers and throws descriptive errors
+ * if configuration is incomplete.
+ *
+ * @param settings - Plugin settings containing OCR backend configuration and API keys
+ * @returns Promise resolving to initialized OCR service instance
+ * @throws {Error} If required API keys are missing for cloud providers
+ *
+ * @example
+ * ```typescript
+ * const settings = {
+ *   ocrBackend: 'openai',
+ *   openaiApiKey: 'sk-...',
+ *   // ... other settings
+ * };
+ * const service = await createOCRService(settings);
+ * const result = await service.processImage(imageBuffer);
+ * ```
  */
 async function createOCRService(settings: PluginSettings): Promise<OCRService> {
 	let service: OCRService;
