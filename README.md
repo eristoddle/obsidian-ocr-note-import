@@ -4,7 +4,8 @@ Transform your handwritten field notebook pages into searchable, organized digit
 
 ## Features
 
-- **Local OCR Processing**: Convert handwritten notebook images to text using Tesseract.js (works offline, privacy-friendly)
+- **Local OCR Processing**: Convert notebook images to text using Tesseract.js (works offline, privacy-friendly)
+  - ⚠️ **Note**: Tesseract works best with **printed text**. Handwriting recognition accuracy is limited (30-60% for clear block letters, lower for cursive)
 - **Pattern-Based Routing**: Define custom regex patterns to automatically route notes to specific locations
 - **Flexible Actions**:
   - Create new notes with custom titles, frontmatter, and content
@@ -120,18 +121,22 @@ Add tags to existing notes based on keywords.
 ### OCR Settings
 
 **OCR Backend**: Choose between local (Tesseract.js) or cloud-based OCR
+
 - **Local (Tesseract.js)**:
   - ✓ Works offline
   - ✓ Privacy-friendly (no data sent externally)
   - ✓ Free
-  - ✗ Moderate accuracy for handwriting
+  - ✓ **Excellent for printed text** (90-95% accuracy)
+  - ✗ **Limited handwriting support** (30-60% for clear block letters, poor for cursive)
   - ✗ Slower processing
+  - 💡 **Best for**: Typed documents, printed books, clear block-letter notes
 
 - **Cloud API** (Future feature):
-  - ✓ Better accuracy for handwriting
+  - ✓ **Much better accuracy for handwriting** (GPT-4 Vision, Google Cloud Vision)
   - ✓ Faster processing
+  - ✓ Handles cursive and messy handwriting
   - ✗ Requires internet connection
-  - ✗ Requires API key
+  - ✗ Requires API key (costs money)
   - ✗ Data sent to external service
 
 ### Daily Note Settings
@@ -300,6 +305,23 @@ The plugin adds the following commands to Obsidian:
 - Write more clearly and with good spacing
 - Consider using cloud OCR (when available) for better accuracy
 
+### Handwriting Not Recognized (Garbled Output)
+
+**Problem**: OCR produces gibberish like `w ) L 9 i - %! P i \ ... '" » A\`
+
+**Cause**: Tesseract.js is optimized for **printed text**, not handwriting
+
+**Solutions**:
+- **For best results**: Use printed text, typed documents, or very clear block-letter handwriting
+- **Improve handwriting recognition**:
+  - Write in clear, separated block letters (not cursive)
+  - Use dark ink on white paper
+  - Ensure high contrast and good lighting
+  - Write larger and with more spacing
+  - Take photos straight-on (not at an angle)
+- **Alternative**: Wait for cloud OCR integration (GPT-4 Vision handles handwriting much better)
+- **Workaround**: Type important notes or use a digital pen/tablet for better OCR results
+
 ### Template Placeholders Not Replaced
 
 **Problem**: Templates show `{{1}}` instead of captured text
@@ -400,6 +422,13 @@ MIT License - see LICENSE file for details
 - **Issues**: Report bugs or request features on [GitHub Issues](https://github.com/yourusername/obsidian-notebook-ocr/issues)
 - **Discussions**: Ask questions or share ideas on [GitHub Discussions](https://github.com/yourusername/obsidian-notebook-ocr/discussions)
 - **Documentation**: Full documentation available in the [GitHub Wiki](https://github.com/yourusername/obsidian-notebook-ocr/wiki)
+
+## Additional Resources
+
+- **[Handwriting OCR Tips](HANDWRITING-TIPS.md)**: Comprehensive guide to improving handwriting recognition
+- **[Architecture Documentation](ARCHITECTURE.md)**: Technical deep-dive for developers
+- **[Debugging Guide](DEBUGGING.md)**: Troubleshooting OCR issues
+- **[Example Rules](example-rules.json)**: Ready-to-use rule configurations
 
 ## Acknowledgments
 

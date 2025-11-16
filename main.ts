@@ -1791,6 +1791,35 @@ export default class NotebookOCRPlugin extends Plugin {
 					continue;
 				}
 
+				// Check for low-quality OCR results (likely handwriting or poor image)
+				const alphanumericCount = (ocrResult.text.match(/[a-zA-Z0-9]/g) || []).length;
+				const totalLength = ocrResult.text.length;
+				const alphanumericRatio = totalLength > 0 ? alphanumericCount / totalLength : 0;
+
+				// If less than 30% alphanumeric, likely garbled
+				if (alphanumericRatio < 0.3 && totalLength > 20) {
+					console.warn(`Low quality OCR result for ${file.name}:`, {
+						confidence: ocrResult.confidence,
+						alphanumericRatio,
+						textLength: totalLength,
+						preview: ocrResult.text.substring(0, 100)
+					});
+
+					new Notice(
+						`⚠️ OCR quality warning for "${file.name}":\n\n` +
+						`The extracted text appears garbled (${Math.round(alphanumericRatio * 100)}% readable). ` +
+						`This usually means:\n` +
+						`• The image contains handwriting (Tesseract works best with printed text)\n` +
+						`• The image quality is too low\n` +
+						`• The image doesn't contain readable text\n\n` +
+						`Tip: For handwritten notes, use clear block letters and good lighting, or wait for cloud OCR support.`,
+						10000
+					);
+
+					errorCount++;
+					continue;
+				}
+
 				// Pass OCR text to rule engine for matching
 				const matches = await this.ruleEngine.matchAndExecute(ocrResult.text);
 
