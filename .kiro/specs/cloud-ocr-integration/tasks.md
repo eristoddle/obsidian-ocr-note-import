@@ -195,14 +195,14 @@
     - Add 'ocr_fallback_used' property if fallbackUsed is true
     - _Requirements: 8.2, 8.3, 8.4_
 
-- [ ] 9. Implement cloud OCR settings UI
-  - [ ] 9.1 Create CloudOCRSettingsUI class
+- [x] 9. Implement cloud OCR settings UI
+  - [x] 9.1 Create CloudOCRSettingsUI class
     - Implement display() method to render settings section
     - Add OCR backend dropdown with descriptions
     - Show/hide provider-specific settings based on selection
     - _Requirements: 1.1, 2.1_
 
-  - [ ] 9.2 Implement OpenAI settings UI
+  - [x] 9.2 Implement OpenAI settings UI
     - Implement displayOpenAISettings() method
     - Display cost warning with link to pricing page
     - Add text input for API key with placeholder
@@ -210,7 +210,7 @@
     - Add optional custom endpoint input
     - _Requirements: 1.1, 1.2, 1.3, 7.1, 10.1, 10.2_
 
-  - [ ] 9.3 Implement Google Cloud settings UI
+  - [x] 9.3 Implement Google Cloud settings UI
     - Implement displayGoogleCloudSettings() method
     - Display cost information with link to pricing page
     - Add text input for API key
@@ -218,13 +218,13 @@
     - Add optional project ID input
     - _Requirements: 2.1, 2.2, 2.3, 7.1, 10.1, 10.2_
 
-  - [ ] 9.4 Implement fallback settings UI
+  - [x] 9.4 Implement fallback settings UI
     - Implement displayFallbackSettings() method
     - Add toggle for enabling fallback to local OCR
     - Show only when cloud backend is selected
     - _Requirements: 6.1, 6.2_
 
-  - [ ] 9.5 Implement preprocessing settings UI
+  - [x] 9.5 Implement preprocessing settings UI
     - Implement displayPreprocessingSettings() method
     - Add toggle for enabling image preprocessing
     - Add text input for maximum image dimension
@@ -233,12 +233,12 @@
     - Show only when cloud backend is selected
     - _Requirements: 9.1, 9.2, 9.3_
 
-  - [ ] 9.6 Implement metadata settings UI
+  - [x] 9.6 Implement metadata settings UI
     - Implement displayMetadataSettings() method
     - Add toggle for including OCR provider in note frontmatter
     - _Requirements: 8.3, 8.4_
 
-  - [ ] 9.7 Implement connection test handlers
+  - [x] 9.7 Implement connection test handlers
     - Implement testOpenAIConnection() method
     - Create OpenAIVisionService with current settings
     - Call testConnection() and show loading notice

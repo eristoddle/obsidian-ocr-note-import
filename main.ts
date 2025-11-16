@@ -2314,6 +2314,7 @@ export default class NotebookOCRPlugin extends Plugin {
 	vaultManager: VaultManager | null = null;
 	ruleEngine: RuleEngine | null = null;
 	folderMonitor: FolderMonitor | null = null;
+	settingTab: NotebookOCRSettingTab | null = null;
 
 	/**
 	 * Called when the plugin is loaded
@@ -2382,7 +2383,8 @@ export default class NotebookOCRPlugin extends Plugin {
 		}
 
 		// Add settings tab
-		this.addSettingTab(new NotebookOCRSettingTab(this.app, this));
+		this.settingTab = new NotebookOCRSettingTab(this.app, this);
+		this.addSettingTab(this.settingTab);
 
 		// Register commands
 		this.registerCommands();
@@ -3947,6 +3949,314 @@ class RuleEditorModal extends Modal {
 }
 
 /**
+ * Cloud OCR Settings UI Helper Class
+ * Handles rendering of cloud OCR provider settings in the settings tab
+ */
+class CloudOCRSettingsUI {
+	private app: App;
+	private plugin: NotebookOCRPlugin;
+
+	constructor(app: App, plugin: NotebookOCRPlugin) {
+		this.app = app;
+		this.plugin = plugin;
+	}
+
+	/**
+	 * Display cloud OCR settings section
+	 * Shows/hides provider-specific settings based on backend selection
+	 */
+	display(containerEl: HTMLElement): void {
+		// OCR Backend Selection
+		new Setting(containerEl)
+			.setName('OCR Backend')
+			.setDesc('Choose the OCR engine for text extraction')
+			.addDropdown(dropdown => dropdown
+				.addOption('tesseract', 'Local (Tesseract.js) - Free, offline, good for printed text')
+				.addOption('openai', 'OpenAI Vision - Best for handwriting, requires API key')
+				.addOption('google', 'Google Cloud Vision - Excellent accuracy, requires API key')
+				.setValue(this.plugin.settings.ocrBackend)
+				.onChange(async (value) => {
+					this.plugin.settings.ocrBackend = value as 'tesseract' | 'openai' | 'google';
+					await this.plugin.saveSettings();
+					// Trigger a refresh of the settings display
+					if (this.plugin.settingTab) {
+						this.plugin.settingTab.display();
+					}
+				}));
+
+		// OpenAI Configuration (shown only when OpenAI is selected)
+		if (this.plugin.settings.ocrBackend === 'openai') {
+			this.displayOpenAISettings(containerEl);
+		}
+
+		// Google Cloud Configuration (shown only when Google is selected)
+		if (this.plugin.settings.ocrBackend === 'google') {
+			this.displayGoogleCloudSettings(containerEl);
+		}
+
+		// Fallback Configuration (shown only for cloud backends)
+		if (this.plugin.settings.ocrBackend !== 'tesseract') {
+			this.displayFallbackSettings(containerEl);
+		}
+
+		// Image Preprocessing (shown only for cloud backends)
+		if (this.plugin.settings.ocrBackend !== 'tesseract') {
+			this.displayPreprocessingSettings(containerEl);
+		}
+
+		// Metadata Settings
+		this.displayMetadataSettings(containerEl);
+	}
+
+	/**
+	 * Display OpenAI-specific settings
+	 * Shows API key input, custom endpoint, and connection test
+	 */
+	private displayOpenAISettings(containerEl: HTMLElement): void {
+		// Cost Warning
+		const warningEl = containerEl.createDiv('setting-item-description');
+		warningEl.style.color = 'var(--text-warning)';
+		warningEl.style.marginBottom = '1em';
+		warningEl.style.padding = '10px';
+		warningEl.style.backgroundColor = 'var(--background-secondary)';
+		warningEl.style.borderRadius = '5px';
+		warningEl.innerHTML = '⚠️ OpenAI Vision API usage incurs costs (~$0.00265 per image). ' +
+			'<a href="https://openai.com/api/pricing/">View pricing</a>';
+
+		// API Key
+		new Setting(containerEl)
+			.setName('OpenAI API Key')
+			.setDesc('Your OpenAI API key (starts with sk-)')
+			.addText(text => text
+				.setPlaceholder('sk-...')
+				.setValue(this.plugin.settings.openaiApiKey || '')
+				.onChange(async (value) => {
+					this.plugin.settings.openaiApiKey = value;
+					await this.plugin.saveSettings();
+				}))
+			.addButton(button => button
+				.setButtonText('Test Connection')
+				.onClick(async () => {
+					await this.testOpenAIConnection();
+				}));
+
+		// Custom Endpoint (Advanced)
+		new Setting(containerEl)
+			.setName('Custom API Endpoint')
+			.setDesc('Optional: Use a custom OpenAI-compatible endpoint')
+			.addText(text => text
+				.setPlaceholder('https://api.openai.com/v1')
+				.setValue(this.plugin.settings.openaiCustomEndpoint || '')
+				.onChange(async (value) => {
+					this.plugin.settings.openaiCustomEndpoint = value;
+					await this.plugin.saveSettings();
+				}));
+	}
+
+	/**
+	 * Display Google Cloud-specific settings
+	 * Shows API key input, project ID, and connection test
+	 */
+	private displayGoogleCloudSettings(containerEl: HTMLElement): void {
+		// Cost Info
+		const infoEl = containerEl.createDiv('setting-item-description');
+		infoEl.style.marginBottom = '1em';
+		infoEl.style.padding = '10px';
+		infoEl.style.backgroundColor = 'var(--background-secondary)';
+		infoEl.style.borderRadius = '5px';
+		infoEl.innerHTML = 'ℹ️ Google Cloud Vision: First 1000 images/month free, then $1.50 per 1000. ' +
+			'<a href="https://cloud.google.com/vision/pricing">View pricing</a>';
+
+		// API Key
+		new Setting(containerEl)
+			.setName('Google Cloud API Key')
+			.setDesc('Your Google Cloud Vision API key')
+			.addText(text => text
+				.setPlaceholder('AIza...')
+				.setValue(this.plugin.settings.googleCloudApiKey || '')
+				.onChange(async (value) => {
+					this.plugin.settings.googleCloudApiKey = value;
+					await this.plugin.saveSettings();
+				}))
+			.addButton(button => button
+				.setButtonText('Test Connection')
+				.onClick(async () => {
+					await this.testGoogleCloudConnection();
+				}));
+
+		// Project ID (Optional)
+		new Setting(containerEl)
+			.setName('Project ID')
+			.setDesc('Optional: Your Google Cloud project ID')
+			.addText(text => text
+				.setPlaceholder('my-project-123')
+				.setValue(this.plugin.settings.googleCloudProjectId || '')
+				.onChange(async (value) => {
+					this.plugin.settings.googleCloudProjectId = value;
+					await this.plugin.saveSettings();
+				}));
+	}
+
+	/**
+	 * Display fallback settings
+	 * Shows toggle for enabling fallback to local OCR
+	 */
+	private displayFallbackSettings(containerEl: HTMLElement): void {
+		new Setting(containerEl)
+			.setName('Enable Fallback to Local OCR')
+			.setDesc('Automatically use Tesseract if cloud OCR fails')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.enableOcrFallback)
+				.onChange(async (value) => {
+					this.plugin.settings.enableOcrFallback = value;
+					await this.plugin.saveSettings();
+				}));
+	}
+
+	/**
+	 * Display preprocessing settings
+	 * Shows toggles and inputs for image preprocessing options
+	 */
+	private displayPreprocessingSettings(containerEl: HTMLElement): void {
+		new Setting(containerEl)
+			.setName('Enable Image Preprocessing')
+			.setDesc('Automatically resize and compress large images before sending to cloud API')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.enableImagePreprocessing)
+				.onChange(async (value) => {
+					this.plugin.settings.enableImagePreprocessing = value;
+					await this.plugin.saveSettings();
+					// Trigger a refresh to show/hide dimension and file size inputs
+					if (this.plugin.settingTab) {
+						this.plugin.settingTab.display();
+					}
+				}));
+
+		if (this.plugin.settings.enableImagePreprocessing) {
+			new Setting(containerEl)
+				.setName('Maximum Image Dimension')
+				.setDesc('Images larger than this will be resized (pixels)')
+				.addText(text => text
+					.setPlaceholder('2048')
+					.setValue(String(this.plugin.settings.maxImageDimension))
+					.onChange(async (value) => {
+						const numValue = parseInt(value);
+						if (!isNaN(numValue) && numValue > 0) {
+							this.plugin.settings.maxImageDimension = numValue;
+							await this.plugin.saveSettings();
+						}
+					}));
+
+			new Setting(containerEl)
+				.setName('Maximum File Size')
+				.setDesc('Maximum file size for cloud API requests (MB)')
+				.addText(text => text
+					.setPlaceholder('4')
+					.setValue(String(this.plugin.settings.maxImageFileSize))
+					.onChange(async (value) => {
+						const numValue = parseFloat(value);
+						if (!isNaN(numValue) && numValue > 0) {
+							this.plugin.settings.maxImageFileSize = numValue;
+							await this.plugin.saveSettings();
+						}
+					}));
+		}
+	}
+
+	/**
+	 * Display metadata settings
+	 * Shows toggle for including OCR provider in note frontmatter
+	 */
+	private displayMetadataSettings(containerEl: HTMLElement): void {
+		new Setting(containerEl)
+			.setName('Include OCR Provider Metadata')
+			.setDesc('Add OCR provider information to note frontmatter')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.includeOcrProviderMetadata)
+				.onChange(async (value) => {
+					this.plugin.settings.includeOcrProviderMetadata = value;
+					await this.plugin.saveSettings();
+				}));
+	}
+
+	/**
+	 * Test OpenAI connection
+	 * Creates OpenAI service with current settings and tests connection
+	 */
+	private async testOpenAIConnection(): Promise<void> {
+		if (!this.plugin.settings.openaiApiKey) {
+			new Notice('Please enter an OpenAI API key first');
+			return;
+		}
+
+		const loadingNotice = new Notice('Testing OpenAI connection...', 0);
+
+		try {
+			// Create OpenAI Vision service with current settings
+			const service = new OpenAIVisionService({
+				apiKey: this.plugin.settings.openaiApiKey,
+				customEndpoint: this.plugin.settings.openaiCustomEndpoint
+			});
+
+			// Initialize the service
+			await service.initialize();
+
+			// Call testConnection
+			const result = await service.testConnection();
+
+			loadingNotice.hide();
+
+			if (result.success) {
+				new Notice(`✅ OpenAI connection successful! Response time: ${result.responseTime}ms`, 5000);
+			} else {
+				new Notice(`❌ OpenAI connection failed: ${result.error}`, 8000);
+			}
+		} catch (error) {
+			loadingNotice.hide();
+			new Notice(`❌ OpenAI connection failed: ${error.message}`, 8000);
+		}
+	}
+
+	/**
+	 * Test Google Cloud connection
+	 * Creates Google Cloud service with current settings and tests connection
+	 */
+	private async testGoogleCloudConnection(): Promise<void> {
+		if (!this.plugin.settings.googleCloudApiKey) {
+			new Notice('Please enter a Google Cloud API key first');
+			return;
+		}
+
+		const loadingNotice = new Notice('Testing Google Cloud Vision connection...', 0);
+
+		try {
+			// Create Google Cloud Vision service with current settings
+			const service = new GoogleCloudVisionService({
+				apiKey: this.plugin.settings.googleCloudApiKey,
+				projectId: this.plugin.settings.googleCloudProjectId
+			});
+
+			// Initialize the service
+			await service.initialize();
+
+			// Call testConnection
+			const result = await service.testConnection();
+
+			loadingNotice.hide();
+
+			if (result.success) {
+				new Notice(`✅ Google Cloud Vision connection successful! Response time: ${result.responseTime}ms`, 5000);
+			} else {
+				new Notice(`❌ Google Cloud Vision connection failed: ${result.error}`, 8000);
+			}
+		} catch (error) {
+			loadingNotice.hide();
+			new Notice(`❌ Google Cloud Vision connection failed: ${error.message}`, 8000);
+		}
+	}
+}
+
+/**
  * Settings tab for the plugin
  */
 class NotebookOCRSettingTab extends PluginSettingTab {
@@ -3979,42 +4289,9 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 		// OCR Backend Setting
 		containerEl.createEl('h3', { text: 'OCR Settings' });
 
-		new Setting(containerEl)
-			.setName('OCR Backend')
-			.setDesc('Choose between local (Tesseract.js) or cloud-based OCR. Local processing is recommended for privacy and offline use.')
-			.addDropdown(dropdown => dropdown
-				.addOption('tesseract', 'Local (Tesseract.js) - Recommended')
-				.addOption('openai', 'OpenAI Vision - Coming Soon')
-				.addOption('google', 'Google Cloud Vision - Coming Soon')
-				.setValue(this.plugin.settings.ocrBackend)
-				.onChange(async (value) => {
-					this.plugin.settings.ocrBackend = value as 'tesseract' | 'openai' | 'google';
-					await this.plugin.saveSettings();
-					this.display(); // Refresh to show/hide cloud settings
-				}));
-
-		// Add additional help text for OCR backend
-		const ocrHelpDiv = containerEl.createDiv({ cls: 'setting-item-description' });
-		ocrHelpDiv.style.marginTop = '-10px';
-		ocrHelpDiv.style.marginBottom = '15px';
-		ocrHelpDiv.style.paddingLeft = '15px';
-		ocrHelpDiv.innerHTML = `
-			<strong>Local (Tesseract.js):</strong> Works offline, privacy-friendly, free. Moderate accuracy for handwriting.<br>
-			<strong>Cloud APIs:</strong> Better accuracy, faster processing. Requires internet and API key. (Feature coming soon)
-		`;
-
-		// Cloud API settings (shown only when cloud backend is selected)
-		if (this.plugin.settings.ocrBackend === 'openai' || this.plugin.settings.ocrBackend === 'google') {
-			const cloudWarningDiv = containerEl.createDiv({ cls: 'setting-item-description' });
-			cloudWarningDiv.style.padding = '10px';
-			cloudWarningDiv.style.backgroundColor = 'var(--background-modifier-error)';
-			cloudWarningDiv.style.borderRadius = '5px';
-			cloudWarningDiv.style.marginBottom = '15px';
-			cloudWarningDiv.innerHTML = `
-				<strong>⚠️ Cloud OCR is not yet implemented.</strong><br>
-				This feature is coming soon. The plugin will fall back to local Tesseract.js processing.
-			`;
-		}
+		// Use CloudOCRSettingsUI to render cloud OCR settings
+		const cloudOCRUI = new CloudOCRSettingsUI(this.app, this.plugin);
+		cloudOCRUI.display(containerEl);
 
 		// Daily Note Settings
 		containerEl.createEl('h3', { text: 'Daily Note Settings' });
