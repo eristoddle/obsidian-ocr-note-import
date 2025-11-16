@@ -2076,9 +2076,15 @@ class FolderMonitor {
 		}
 
 		// Read image file as ArrayBuffer
-		const imageData = await this.plugin.app.vault.readBinary(imageFile);
+		let imageData = await this.plugin.app.vault.readBinary(imageFile);
 
-		// Pass image data to OCR service
+		// Preprocess images if cloud backend and preprocessing enabled
+		if (this.plugin.imagePreprocessor && this.plugin.settings.ocrBackend !== 'tesseract' && this.plugin.settings.enableImagePreprocessing) {
+			imageData = await this.plugin.imagePreprocessor.preprocess(imageData);
+			console.log(`Image preprocessed for ${imageFile.name}`);
+		}
+
+		// Pass preprocessed image to OCR service
 		const ocrResult = await this.plugin.ocrService.processImage(imageData);
 
 		// Handle OCR errors
@@ -2088,6 +2094,19 @@ class FolderMonitor {
 
 		if (!ocrResult.text || ocrResult.text.trim().length === 0) {
 			throw new Error('No text found in image');
+		}
+
+		// Display notification indicating which provider was used
+		const providerName = ocrResult.provider || this.plugin.settings.ocrBackend;
+		console.log(`OCR completed for ${imageFile.name} using ${providerName}`);
+
+		// If fallback was used, show warning notification
+		if (ocrResult.fallbackUsed) {
+			new Notice(
+				`⚠️ Cloud OCR failed for "${imageFile.name}". Fallback to local Tesseract was used.\n\n` +
+				`The text extraction may be less accurate. Consider checking your API key or internet connection.`,
+				8000
+			);
 		}
 
 		// Pass OCR text to rule engine for matching
@@ -2102,7 +2121,31 @@ class FolderMonitor {
 
 				// Check if all actions succeeded
 				const allSucceeded = results.every(r => r.success);
-				if (!allSucceeded) {
+				if (allSucceeded) {
+					// Add OCR provider metadata to created notes if enabled
+					if (this.plugin.settings.includeOcrProviderMetadata) {
+						for (const result of results) {
+							if (result.action.type === 'create-note' && result.createdFile) {
+								const metadata: Record<string, any> = {};
+
+								// Add ocr_provider property
+								if (ocrResult.provider) {
+									metadata['ocr_provider'] = ocrResult.provider;
+								}
+
+								// Add ocr_fallback_used property if fallback was used
+								if (ocrResult.fallbackUsed) {
+									metadata['ocr_fallback_used'] = true;
+								}
+
+								// Modify frontmatter if metadata exists
+								if (Object.keys(metadata).length > 0 && this.plugin.vaultManager) {
+									await this.plugin.vaultManager.modifyFrontmatter(result.createdFile, metadata, false);
+								}
+							}
+						}
+					}
+				} else {
 					const failedActions = results.filter(r => !r.success);
 					// Use ErrorHandler for better error messages
 					failedActions.forEach(result => {
@@ -2267,6 +2310,7 @@ const DEFAULT_SETTINGS: PluginSettings = {
 export default class NotebookOCRPlugin extends Plugin {
 	settings: PluginSettings;
 	ocrService: OCRService | null = null;
+	imagePreprocessor: ImagePreprocessor | null = null;
 	vaultManager: VaultManager | null = null;
 	ruleEngine: RuleEngine | null = null;
 	folderMonitor: FolderMonitor | null = null;
@@ -2280,10 +2324,33 @@ export default class NotebookOCRPlugin extends Plugin {
 		// Load settings
 		await this.loadSettings();
 
-		// Initialize OCR service
+		// Initialize OCR service based on settings.ocrBackend
 		try {
-			this.ocrService = await createOCRService(this.settings);
-			console.log('OCR service initialized successfully');
+			let primaryService = await createOCRService(this.settings);
+
+			// If cloud backend selected, wrap with OCRFallbackHandler if fallback enabled
+			if (this.settings.ocrBackend !== 'tesseract' && this.settings.enableOcrFallback) {
+				const fallbackService = new TesseractOCRService();
+				await fallbackService.initialize();
+				this.ocrService = new OCRFallbackHandler(
+					primaryService,
+					fallbackService,
+					this.settings.enableOcrFallback
+				);
+				console.log(`OCR service initialized with ${this.settings.ocrBackend} backend and Tesseract fallback`);
+			} else {
+				this.ocrService = primaryService;
+				console.log(`OCR service initialized with ${this.settings.ocrBackend} backend`);
+			}
+
+			// Initialize ImagePreprocessor if preprocessing enabled
+			if (this.settings.enableImagePreprocessing && this.settings.ocrBackend !== 'tesseract') {
+				this.imagePreprocessor = new ImagePreprocessor(
+					this.settings.maxImageDimension,
+					this.settings.maxImageFileSize
+				);
+				console.log('Image preprocessor initialized');
+			}
 		} catch (error) {
 			console.error('Failed to initialize OCR service:', error);
 			new Notice('Failed to initialize OCR service. Please check console for details.');
@@ -2512,9 +2579,15 @@ export default class NotebookOCRPlugin extends Plugin {
 				}
 
 				// Read image file as ArrayBuffer
-				const imageData = await file.arrayBuffer();
+				let imageData = await file.arrayBuffer();
 
-				// Pass image data to OCR service
+				// Preprocess images if cloud backend and preprocessing enabled
+				if (this.imagePreprocessor && this.settings.ocrBackend !== 'tesseract' && this.settings.enableImagePreprocessing) {
+					imageData = await this.imagePreprocessor.preprocess(imageData);
+					console.log(`Image preprocessed for ${file.name}`);
+				}
+
+				// Pass preprocessed image to OCR service
 				const ocrResult = await this.ocrService.processImage(imageData);
 
 				// Handle OCR errors
@@ -2528,6 +2601,19 @@ export default class NotebookOCRPlugin extends Plugin {
 					ErrorHandler.handleOCRError(new Error('No text found in image'), file.name);
 					errorCount++;
 					continue;
+				}
+
+				// Display notification indicating which provider was used
+				const providerName = ocrResult.provider || this.settings.ocrBackend;
+				console.log(`OCR completed for ${file.name} using ${providerName}`);
+
+				// If fallback was used, show warning notification
+				if (ocrResult.fallbackUsed) {
+					new Notice(
+						`⚠️ Cloud OCR failed for "${file.name}". Fallback to local Tesseract was used.\n\n` +
+						`The text extraction may be less accurate. Consider checking your API key or internet connection.`,
+						8000
+					);
 				}
 
 				// Check for low-quality OCR results (likely handwriting or poor image)
@@ -2571,6 +2657,31 @@ export default class NotebookOCRPlugin extends Plugin {
 						const allSucceeded = results.every(r => r.success);
 						if (allSucceeded) {
 							successCount++;
+
+							// Add OCR provider metadata to created notes if enabled
+							if (this.settings.includeOcrProviderMetadata) {
+								for (const result of results) {
+									if (result.action.type === 'create-note' && result.createdFile) {
+										const metadata: Record<string, any> = {};
+
+										// Add ocr_provider property
+										if (ocrResult.provider) {
+											metadata['ocr_provider'] = ocrResult.provider;
+										}
+
+										// Add ocr_fallback_used property if fallback was used
+										if (ocrResult.fallbackUsed) {
+											metadata['ocr_fallback_used'] = true;
+										}
+
+										// Modify frontmatter if metadata exists
+										if (Object.keys(metadata).length > 0 && this.vaultManager) {
+											await this.vaultManager.modifyFrontmatter(result.createdFile, metadata, false);
+										}
+									}
+								}
+							}
+
 							// Track what actions were taken
 							const actionTypes = results.map(r => {
 								if (r.action.type === 'create-note' && r.createdFile) {
@@ -2578,7 +2689,8 @@ export default class NotebookOCRPlugin extends Plugin {
 								}
 								return r.action.type.replace('-', ' ');
 							});
-							actionsSummary.push(`${file.name}: ${actionTypes.join(', ')}`);
+							const providerInfo = ocrResult.provider ? ` (${ocrResult.provider})` : '';
+							actionsSummary.push(`${file.name}${providerInfo}: ${actionTypes.join(', ')}`);
 						} else {
 							errorCount++;
 							const failedActions = results.filter(r => !r.success);
@@ -2595,7 +2707,8 @@ export default class NotebookOCRPlugin extends Plugin {
 					// Apply default action if no rules match
 					await this.applyDefaultAction(ocrResult.text, file.name);
 					successCount++;
-					actionsSummary.push(`${file.name}: applied default action`);
+					const providerInfo = ocrResult.provider ? ` (${ocrResult.provider})` : '';
+					actionsSummary.push(`${file.name}${providerInfo}: applied default action`);
 				}
 
 			} catch (error) {

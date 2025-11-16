@@ -173,14 +173,14 @@
     - Keep existing 'tesseract' case as default
     - _Requirements: 1.1, 1.4, 2.1, 2.4_
 
-- [ ] 8. Integrate cloud OCR into main plugin
-  - [ ] 8.1 Update plugin initialization
+- [x] 8. Integrate cloud OCR into main plugin
+  - [x] 8.1 Update plugin initialization
     - Modify onload() to create OCR service based on settings.ocrBackend
     - If cloud backend selected, wrap with OCRFallbackHandler if fallback enabled
     - Initialize ImagePreprocessor if preprocessing enabled
     - _Requirements: 1.1, 2.1, 6.1, 9.1_
 
-  - [ ] 8.2 Update image processing pipeline
+  - [x] 8.2 Update image processing pipeline
     - Modify image processing command to preprocess images if cloud backend and preprocessing enabled
     - Pass preprocessed image to OCR service
     - Check OCRResult for fallbackUsed flag
@@ -188,7 +188,7 @@
     - If fallback was used, show warning notification
     - _Requirements: 3.1, 3.2, 6.3, 8.1, 8.2, 9.1_
 
-  - [ ] 8.3 Add OCR provider metadata to notes
+  - [x] 8.3 Add OCR provider metadata to notes
     - Check settings.includeOcrProviderMetadata flag
     - If enabled, add frontmatter property 'ocr_provider' to created notes
     - Set value to OCRResult.provider
