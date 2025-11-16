@@ -863,6 +863,160 @@ class OCRFallbackHandler implements OCRService {
 }
 
 /**
+ * Image Preprocessor
+ * Handles image resizing and compression before sending to cloud OCR services
+ */
+class ImagePreprocessor {
+	private maxDimension: number;
+	private maxFileSize: number;  // in bytes
+
+	/**
+	 * Constructor accepting maxDimension and maxFileSize parameters
+	 * @param maxDimension - Maximum image dimension in pixels (default: 2048)
+	 * @param maxFileSize - Maximum file size in MB (default: 4)
+	 */
+	constructor(maxDimension: number = 2048, maxFileSize: number = 4) {
+		this.maxDimension = maxDimension;
+		this.maxFileSize = maxFileSize * 1024 * 1024;  // Convert MB to bytes
+	}
+
+	/**
+	 * Preprocess image by resizing and compressing if needed
+	 * @param imageData - Image data as ArrayBuffer
+	 * @returns Preprocessed image data as ArrayBuffer
+	 */
+	async preprocess(imageData: ArrayBuffer): Promise<ArrayBuffer> {
+		// Check if preprocessing is needed
+		if (imageData.byteLength <= this.maxFileSize) {
+			const dimensions = await this.getImageDimensions(imageData);
+			if (dimensions.width <= this.maxDimension && dimensions.height <= this.maxDimension) {
+				return imageData;  // No preprocessing needed
+			}
+		}
+
+		// Load image
+		const img = await this.loadImage(imageData);
+
+		// Calculate new dimensions
+		const scale = Math.min(
+			this.maxDimension / img.width,
+			this.maxDimension / img.height,
+			1  // Don't upscale
+		);
+
+		const newWidth = Math.floor(img.width * scale);
+		const newHeight = Math.floor(img.height * scale);
+
+		// Resize image
+		const resized = await this.resizeImage(img, newWidth, newHeight);
+
+		// Compress if still too large
+		let quality = 0.9;
+		let compressed = await this.compressImage(resized, quality);
+
+		while (compressed.byteLength > this.maxFileSize && quality > 0.5) {
+			quality -= 0.1;
+			compressed = await this.compressImage(resized, quality);
+		}
+
+		return compressed;
+	}
+
+	/**
+	 * Load image from ArrayBuffer into HTMLImageElement
+	 * @param imageData - Image data as ArrayBuffer
+	 * @returns Promise resolving to HTMLImageElement
+	 */
+	private async loadImage(imageData: ArrayBuffer): Promise<HTMLImageElement> {
+		return new Promise((resolve, reject) => {
+			const blob = new Blob([imageData]);
+			const url = URL.createObjectURL(blob);
+			const img = new Image();
+
+			img.onload = () => {
+				URL.revokeObjectURL(url);
+				resolve(img);
+			};
+
+			img.onerror = () => {
+				URL.revokeObjectURL(url);
+				reject(new Error('Failed to load image'));
+			};
+
+			img.src = url;
+		});
+	}
+
+	/**
+	 * Resize image using canvas
+	 * @param img - HTMLImageElement to resize
+	 * @param width - Target width in pixels
+	 * @param height - Target height in pixels
+	 * @returns Promise resolving to HTMLCanvasElement with resized image
+	 */
+	private async resizeImage(
+		img: HTMLImageElement,
+		width: number,
+		height: number
+	): Promise<HTMLCanvasElement> {
+		const canvas = document.createElement('canvas');
+		canvas.width = width;
+		canvas.height = height;
+
+		const ctx = canvas.getContext('2d');
+		if (!ctx) {
+			throw new Error('Failed to get canvas context');
+		}
+
+		ctx.drawImage(img, 0, 0, width, height);
+		return canvas;
+	}
+
+	/**
+	 * Compress image to JPEG with quality setting
+	 * @param canvas - HTMLCanvasElement containing the image
+	 * @param quality - JPEG quality (0.0 to 1.0)
+	 * @returns Promise resolving to compressed image as ArrayBuffer
+	 */
+	private async compressImage(
+		canvas: HTMLCanvasElement,
+		quality: number
+	): Promise<ArrayBuffer> {
+		return new Promise((resolve, reject) => {
+			canvas.toBlob(
+				(blob) => {
+					if (!blob) {
+						reject(new Error('Failed to compress image'));
+						return;
+					}
+
+					const reader = new FileReader();
+					reader.onload = () => {
+						resolve(reader.result as ArrayBuffer);
+					};
+					reader.onerror = () => {
+						reject(new Error('Failed to read compressed image'));
+					};
+					reader.readAsArrayBuffer(blob);
+				},
+				'image/jpeg',
+				quality
+			);
+		});
+	}
+
+	/**
+	 * Get image dimensions from ArrayBuffer
+	 * @param imageData - Image data as ArrayBuffer
+	 * @returns Promise resolving to object with width and height
+	 */
+	private async getImageDimensions(imageData: ArrayBuffer): Promise<{width: number, height: number}> {
+		const img = await this.loadImage(imageData);
+		return { width: img.width, height: img.height };
+	}
+}
+
+/**
  * OCR service factory function
  * Creates and initializes the appropriate OCR service based on settings
  */

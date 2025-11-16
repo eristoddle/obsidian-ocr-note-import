@@ -136,14 +136,14 @@
     - Return fallback result
     - _Requirements: 6.2, 6.3, 6.4_
 
-- [ ] 6. Implement image preprocessor
-  - [ ] 6.1 Create ImagePreprocessor class
+- [x] 6. Implement image preprocessor
+  - [x] 6.1 Create ImagePreprocessor class
     - Implement constructor accepting maxDimension and maxFileSize parameters
     - Set default maxDimension to 2048 pixels
     - Set default maxFileSize to 4MB
     - _Requirements: 9.1, 9.2, 9.3_
 
-  - [ ] 6.2 Implement preprocessing logic
+  - [x] 6.2 Implement preprocessing logic
     - Implement preprocess() method accepting ArrayBuffer
     - Check if image size and dimensions are within limits
     - If within limits, return original image data
@@ -155,7 +155,7 @@
     - Return preprocessed ArrayBuffer
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5_
 
-  - [ ] 6.3 Implement image manipulation helpers
+  - [x] 6.3 Implement image manipulation helpers
     - Implement loadImage() to create HTMLImageElement from ArrayBuffer
     - Implement resizeImage() to scale image using canvas
     - Implement compressImage() to convert canvas to JPEG with quality setting
