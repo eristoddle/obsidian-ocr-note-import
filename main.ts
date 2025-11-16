@@ -21,6 +21,67 @@ class PlatformHelper {
 }
 
 /**
+ * OCR error type enumeration
+ */
+enum OCRErrorType {
+	AUTHENTICATION = 'authentication',
+	RATE_LIMIT = 'rate_limit',
+	NETWORK = 'network',
+	INVALID_IMAGE = 'invalid_image',
+	QUOTA_EXCEEDED = 'quota_exceeded',
+	UNKNOWN = 'unknown'
+}
+
+/**
+ * OCR error class with type and provider information
+ */
+class OCRError extends Error {
+	type: OCRErrorType;
+	provider: string;
+	originalError?: any;
+
+	constructor(type: OCRErrorType, provider: string, message: string, originalError?: any) {
+		super(message);
+		this.type = type;
+		this.provider = provider;
+		this.originalError = originalError;
+		this.name = 'OCRError';
+	}
+}
+
+/**
+ * Error message formatter for OCR errors
+ */
+class ErrorMessageFormatter {
+	/**
+	 * Format OCR error into user-friendly message
+	 */
+	static format(error: OCRError): string {
+		const baseMessage = `${error.provider} OCR failed: `;
+
+		switch (error.type) {
+			case OCRErrorType.AUTHENTICATION:
+				return baseMessage + 'Invalid API key. Please check your API key in settings.';
+
+			case OCRErrorType.RATE_LIMIT:
+				return baseMessage + 'Rate limit exceeded. Please wait before trying again or upgrade your plan.';
+
+			case OCRErrorType.NETWORK:
+				return baseMessage + 'Network error. Please check your internet connection.';
+
+			case OCRErrorType.QUOTA_EXCEEDED:
+				return baseMessage + 'API quota exceeded. Please check your usage limits.';
+
+			case OCRErrorType.INVALID_IMAGE:
+				return baseMessage + 'Invalid image format or corrupted image file.';
+
+			default:
+				return baseMessage + error.message;
+		}
+	}
+}
+
+/**
  * ErrorHandler class for handling different types of errors with user-friendly messages
  */
 class ErrorHandler {
@@ -32,19 +93,24 @@ class ErrorHandler {
 
 		let userMessage = `Failed to process image "${imagePath}"`;
 
-		// Provide specific error messages based on error type
-		if (error.message.includes('not initialized')) {
-			userMessage += ': OCR service not initialized. Please check plugin settings.';
-		} else if (error.message.includes('Failed to initialize')) {
-			userMessage += ': Could not initialize OCR engine. Please reload the plugin.';
-		} else if (error.message.includes('No text found')) {
-			userMessage += ': No text detected in image. The image may be blank or too low quality.';
-		} else if (error.message.includes('timeout')) {
-			userMessage += ': OCR processing timed out. Try with a smaller or clearer image.';
-		} else if (error.message.includes('memory')) {
-			userMessage += ': Insufficient memory to process image. Try with a smaller image.';
+		// Use ErrorMessageFormatter for OCRError instances
+		if (error instanceof OCRError) {
+			userMessage = ErrorMessageFormatter.format(error);
 		} else {
-			userMessage += `: ${error.message}`;
+			// Provide specific error messages based on error type
+			if (error.message.includes('not initialized')) {
+				userMessage += ': OCR service not initialized. Please check plugin settings.';
+			} else if (error.message.includes('Failed to initialize')) {
+				userMessage += ': Could not initialize OCR engine. Please reload the plugin.';
+			} else if (error.message.includes('No text found')) {
+				userMessage += ': No text detected in image. The image may be blank or too low quality.';
+			} else if (error.message.includes('timeout')) {
+				userMessage += ': OCR processing timed out. Try with a smaller or clearer image.';
+			} else if (error.message.includes('memory')) {
+				userMessage += ': Insufficient memory to process image. Try with a smaller image.';
+			} else {
+				userMessage += `: ${error.message}`;
+			}
 		}
 
 		new Notice(userMessage, 8000);
@@ -534,6 +600,24 @@ class OpenAIVisionService implements OCRService {
 	}
 
 	/**
+	 * Determine OCR error type from error message
+	 */
+	private getErrorType(error: any): OCRErrorType {
+		const message = error.message || String(error);
+
+		if (message.includes('401') || message.includes('authentication') || message.includes('Incorrect API key')) {
+			return OCRErrorType.AUTHENTICATION;
+		}
+		if (message.includes('429') || message.includes('rate limit')) {
+			return OCRErrorType.RATE_LIMIT;
+		}
+		if (message.includes('network') || message.includes('fetch') || message.includes('Failed to fetch')) {
+			return OCRErrorType.NETWORK;
+		}
+		return OCRErrorType.UNKNOWN;
+	}
+
+	/**
 	 * Convert ArrayBuffer to base64 string
 	 */
 	private arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -732,6 +816,24 @@ class GoogleCloudVisionService implements OCRService {
 			return 'Network error. Please check your internet connection.';
 		}
 		return `Google Cloud Vision error: ${message}`;
+	}
+
+	/**
+	 * Determine OCR error type from error message
+	 */
+	private getErrorType(error: any): OCRErrorType {
+		const message = error.message || String(error);
+
+		if (message.includes('401') || message.includes('403') || message.includes('API key')) {
+			return OCRErrorType.AUTHENTICATION;
+		}
+		if (message.includes('429') || message.includes('quota')) {
+			return OCRErrorType.QUOTA_EXCEEDED;
+		}
+		if (message.includes('network') || message.includes('fetch') || message.includes('Failed to fetch')) {
+			return OCRErrorType.NETWORK;
+		}
+		return OCRErrorType.UNKNOWN;
 	}
 
 	/**
@@ -2103,7 +2205,7 @@ class FolderMonitor {
 		// If fallback was used, show warning notification
 		if (ocrResult.fallbackUsed) {
 			new Notice(
-				`⚠️ Cloud OCR failed for "${imageFile.name}". Fallback to local Tesseract was used.\n\n` +
+				`⚠️ ${providerName} OCR failed for "${imageFile.name}". Fallback to local Tesseract was used.\n\n` +
 				`The text extraction may be less accurate. Consider checking your API key or internet connection.`,
 				8000
 			);
@@ -2612,7 +2714,7 @@ export default class NotebookOCRPlugin extends Plugin {
 				// If fallback was used, show warning notification
 				if (ocrResult.fallbackUsed) {
 					new Notice(
-						`⚠️ Cloud OCR failed for "${file.name}". Fallback to local Tesseract was used.\n\n` +
+						`⚠️ ${providerName} OCR failed for "${file.name}". Fallback to local Tesseract was used.\n\n` +
 						`The text extraction may be less accurate. Consider checking your API key or internet connection.`,
 						8000
 					);
