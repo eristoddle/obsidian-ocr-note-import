@@ -1023,13 +1023,36 @@ class ImagePreprocessor {
 async function createOCRService(settings: PluginSettings): Promise<OCRService> {
 	let service: OCRService;
 
-	if (settings.ocrBackend === 'openai' || settings.ocrBackend === 'google') {
-		// Cloud OCR not yet implemented
-		console.warn('Cloud OCR backend not yet implemented, falling back to Tesseract');
-		service = new TesseractOCRService();
-	} else {
-		// Use Tesseract.js for local OCR
-		service = new TesseractOCRService();
+	switch (settings.ocrBackend) {
+		case 'openai':
+			// Validate OpenAI API key is present
+			if (!settings.openaiApiKey) {
+				throw new Error('OpenAI API key is required. Please configure it in settings.');
+			}
+			// Create and return OpenAI Vision service
+			service = new OpenAIVisionService({
+				apiKey: settings.openaiApiKey,
+				customEndpoint: settings.openaiCustomEndpoint
+			});
+			break;
+
+		case 'google':
+			// Validate Google Cloud API key is present
+			if (!settings.googleCloudApiKey) {
+				throw new Error('Google Cloud Vision API key is required. Please configure it in settings.');
+			}
+			// Create and return Google Cloud Vision service
+			service = new GoogleCloudVisionService({
+				apiKey: settings.googleCloudApiKey,
+				projectId: settings.googleCloudProjectId
+			});
+			break;
+
+		case 'tesseract':
+		default:
+			// Use Tesseract.js for local OCR (default)
+			service = new TesseractOCRService();
+			break;
 	}
 
 	try {

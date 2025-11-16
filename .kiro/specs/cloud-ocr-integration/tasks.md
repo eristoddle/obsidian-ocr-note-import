@@ -162,8 +162,8 @@
     - Implement getImageDimensions() to extract width and height
     - _Requirements: 9.1, 9.2_
 
-- [ ] 7. Update OCR service factory
-  - [ ] 7.1 Extend OCRServiceFactory.create() method
+- [x] 7. Update OCR service factory
+  - [x] 7.1 Extend OCRServiceFactory.create() method
     - Add case for 'openai' backend
     - Validate openaiApiKey is present
     - Create and return OpenAIVisionService instance
