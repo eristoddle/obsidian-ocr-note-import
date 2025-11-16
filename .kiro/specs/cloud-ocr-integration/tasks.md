@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Extend OCR service interfaces and data models
+- [x] 1. Extend OCR service interfaces and data models
   - Update OCRService interface to include testConnection() and getProviderInfo() methods
   - Update OCRResult interface to include provider and fallbackUsed fields
   - Create ConnectionTestResult interface

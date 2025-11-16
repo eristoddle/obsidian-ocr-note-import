@@ -134,6 +134,8 @@ interface OCRService {
 	initialize(): Promise<void>;
 	processImage(imageData: ArrayBuffer): Promise<OCRResult>;
 	isAvailable(): boolean;
+	testConnection?(): Promise<ConnectionTestResult>;
+	getProviderInfo?(): OCRProviderInfo;
 }
 
 /**
@@ -143,6 +145,45 @@ interface OCRResult {
 	text: string;
 	confidence: number;
 	error?: string;
+	provider?: string;
+	fallbackUsed?: boolean;
+}
+
+/**
+ * Connection test result interface
+ */
+interface ConnectionTestResult {
+	success: boolean;
+	responseTime?: number;
+	error?: string;
+}
+
+/**
+ * OCR provider information interface
+ */
+interface OCRProviderInfo {
+	name: string;
+	requiresApiKey: boolean;
+	requiresInternet: boolean;
+	estimatedCost: string;
+	pricingUrl: string;
+	accuracyRating: 'low' | 'medium' | 'high' | 'very-high';
+}
+
+/**
+ * OpenAI configuration interface
+ */
+interface OpenAIConfig {
+	apiKey: string;
+	customEndpoint?: string;
+}
+
+/**
+ * Google Cloud configuration interface
+ */
+interface GoogleCloudConfig {
+	apiKey: string;
+	projectId?: string;
 }
 
 /**
