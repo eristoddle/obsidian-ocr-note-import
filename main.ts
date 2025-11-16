@@ -562,6 +562,207 @@ class OpenAIVisionService implements OCRService {
 }
 
 /**
+ * Google Cloud Vision OCR service implementation
+ */
+class GoogleCloudVisionService implements OCRService {
+	private apiKey: string;
+	private projectId?: string;
+	private apiEndpoint: string = 'https://vision.googleapis.com/v1';
+
+	/**
+	 * Constructor accepting Google Cloud configuration
+	 */
+	constructor(config: GoogleCloudConfig) {
+		this.apiKey = config.apiKey;
+		this.projectId = config.projectId;
+	}
+
+	/**
+	 * Initialize the Google Cloud Vision service with API key validation
+	 */
+	async initialize(): Promise<void> {
+		if (!this.apiKey) {
+			throw new Error('Google Cloud Vision API key is required');
+		}
+		console.log('Google Cloud Vision OCR service initialized');
+	}
+
+	/**
+	 * Process an image and extract text using Google Cloud Vision API
+	 */
+	async processImage(imageData: ArrayBuffer): Promise<OCRResult> {
+		try {
+			// Convert image to base64
+			const base64Image = this.arrayBufferToBase64(imageData);
+
+			// Construct request payload
+			const payload = {
+				requests: [
+					{
+						image: {
+							content: base64Image
+						},
+						features: [
+							{
+								type: 'TEXT_DETECTION',
+								maxResults: 1
+							}
+						]
+					}
+				]
+			};
+
+			// Send request
+			const response = await this.sendRequest(payload);
+
+			// Parse response
+			const textAnnotations = response.responses[0]?.textAnnotations;
+			if (!textAnnotations || textAnnotations.length === 0) {
+				return {
+					text: '',
+					confidence: 0,
+					provider: 'Google Cloud Vision'
+				};
+			}
+
+			// First annotation contains the full text
+			const fullText = textAnnotations[0].description;
+			const confidence = textAnnotations[0].confidence || 0.9;
+
+			return {
+				text: fullText.trim(),
+				confidence: confidence,
+				provider: 'Google Cloud Vision',
+				fallbackUsed: false
+			};
+		} catch (error) {
+			return {
+				text: '',
+				confidence: 0,
+				error: this.formatError(error),
+				provider: 'Google Cloud Vision'
+			};
+		}
+	}
+
+	/**
+	 * Test connection to Google Cloud Vision API
+	 */
+	async testConnection(): Promise<ConnectionTestResult> {
+		const startTime = Date.now();
+		try {
+			const testImage = this.createTestImage();
+			const result = await this.processImage(testImage);
+
+			if (result.error) {
+				return {
+					success: false,
+					error: result.error
+				};
+			}
+
+			return {
+				success: true,
+				responseTime: Date.now() - startTime
+			};
+		} catch (error) {
+			return {
+				success: false,
+				error: this.formatError(error)
+			};
+		}
+	}
+
+	/**
+	 * Get provider information
+	 */
+	getProviderInfo(): OCRProviderInfo {
+		return {
+			name: 'Google Cloud Vision',
+			requiresApiKey: true,
+			requiresInternet: true,
+			estimatedCost: '$1.50 per 1000 images (first 1000 free/month)',
+			pricingUrl: 'https://cloud.google.com/vision/pricing',
+			accuracyRating: 'very-high'
+		};
+	}
+
+	/**
+	 * Check if the service is available
+	 */
+	isAvailable(): boolean {
+		return !!this.apiKey;
+	}
+
+	/**
+	 * Send request to Google Cloud Vision API
+	 */
+	private async sendRequest(payload: any): Promise<any> {
+		const url = `${this.apiEndpoint}/images:annotate?key=${this.apiKey}`;
+
+		const response = await fetch(url, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify(payload)
+		});
+
+		if (!response.ok) {
+			const errorData = await response.json().catch(() => ({}));
+			throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+		}
+
+		return await response.json();
+	}
+
+	/**
+	 * Format error messages for user-friendly display
+	 */
+	private formatError(error: any): string {
+		const message = error.message || String(error);
+
+		if (message.includes('401') || message.includes('403') || message.includes('API key')) {
+			return 'Invalid API key. Please check your Google Cloud Vision API key in settings.';
+		}
+		if (message.includes('429') || message.includes('quota')) {
+			return 'Quota exceeded. Please check your Google Cloud quota limits.';
+		}
+		if (message.includes('network') || message.includes('fetch') || message.includes('Failed to fetch')) {
+			return 'Network error. Please check your internet connection.';
+		}
+		return `Google Cloud Vision error: ${message}`;
+	}
+
+	/**
+	 * Convert ArrayBuffer to base64 string
+	 */
+	private arrayBufferToBase64(buffer: ArrayBuffer): string {
+		const bytes = new Uint8Array(buffer);
+		let binary = '';
+		for (let i = 0; i < bytes.byteLength; i++) {
+			binary += String.fromCharCode(bytes[i]);
+		}
+		return btoa(binary);
+	}
+
+	/**
+	 * Create a minimal test image for connection testing
+	 */
+	private createTestImage(): ArrayBuffer {
+		// Create a minimal 1x1 pixel test image
+		// This is a base64-encoded 1x1 transparent PNG
+		const testBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+		const binary = atob(testBase64);
+		const bytes = new Uint8Array(binary.length);
+		for (let i = 0; i < binary.length; i++) {
+			bytes[i] = binary.charCodeAt(i);
+		}
+		return bytes.buffer;
+	}
+}
+
+/**
  * OCR service factory function
  * Creates and initializes the appropriate OCR service based on settings
  */
