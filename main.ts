@@ -763,6 +763,106 @@ class GoogleCloudVisionService implements OCRService {
 }
 
 /**
+ * OCR Fallback Handler
+ * Handles fallback from primary OCR service to fallback service on failure
+ */
+class OCRFallbackHandler implements OCRService {
+	private primaryService: OCRService;
+	private fallbackService: OCRService;
+	private fallbackEnabled: boolean;
+
+	/**
+	 * Constructor accepting primary service, fallback service, and enabled flag
+	 */
+	constructor(
+		primaryService: OCRService,
+		fallbackService: OCRService,
+		fallbackEnabled: boolean
+	) {
+		this.primaryService = primaryService;
+		this.fallbackService = fallbackService;
+		this.fallbackEnabled = fallbackEnabled;
+	}
+
+	/**
+	 * Initialize both primary and fallback services
+	 */
+	async initialize(): Promise<void> {
+		await this.primaryService.initialize();
+		if (this.fallbackEnabled) {
+			await this.fallbackService.initialize();
+		}
+	}
+
+	/**
+	 * Process image with fallback logic
+	 * Attempts processing with primary service first, falls back if enabled and primary fails
+	 */
+	async processImage(imageData: ArrayBuffer): Promise<OCRResult> {
+		// Try primary service first
+		const primaryResult = await this.primaryService.processImage(imageData);
+
+		// If successful, return result immediately
+		if (!primaryResult.error) {
+			return primaryResult;
+		}
+
+		// If failed and fallback disabled, return error result
+		if (!this.fallbackEnabled) {
+			return primaryResult;
+		}
+
+		// Try fallback service
+		console.log(`Primary OCR failed: ${primaryResult.error}. Attempting fallback...`);
+		const fallbackResult = await this.fallbackService.processImage(imageData);
+
+		// Mark result with fallbackUsed flag
+		fallbackResult.fallbackUsed = true;
+
+		// Return fallback result
+		return fallbackResult;
+	}
+
+	/**
+	 * Check if the primary service is available
+	 */
+	isAvailable(): boolean {
+		return this.primaryService.isAvailable();
+	}
+
+	/**
+	 * Test connection using primary service
+	 */
+	async testConnection(): Promise<ConnectionTestResult> {
+		if (this.primaryService.testConnection) {
+			return await this.primaryService.testConnection();
+		}
+		return {
+			success: false,
+			error: 'Connection test not supported by primary service'
+		};
+	}
+
+	/**
+	 * Get provider info from primary service
+	 */
+	getProviderInfo(): OCRProviderInfo {
+		if (this.primaryService.getProviderInfo) {
+			return this.primaryService.getProviderInfo();
+		}
+		// Return a default provider info if primary doesn't support it
+		return {
+			name: 'Unknown Provider',
+			requiresApiKey: false,
+			requiresInternet: false,
+			estimatedCost: 'N/A',
+			pricingUrl: '',
+			accuracyRating: 'medium'
+		};
+	}
+}
+
+/**
  * OCR service factory function
  * Creates and initializes the appropriate OCR service based on settings
  */
