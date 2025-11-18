@@ -3230,6 +3230,57 @@ export default class NotebookOCRPlugin extends Plugin {
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
+
+	/**
+	 * Reinitialize OCR service when backend settings change
+	 */
+	async reinitializeOCRService(): Promise<void> {
+		try {
+			// Terminate existing Tesseract service if it exists
+			if (this.ocrService instanceof TesseractOCRService) {
+				await (this.ocrService as TesseractOCRService).terminate();
+			} else if (this.ocrService instanceof OCRFallbackHandler) {
+				// If using fallback handler, terminate the fallback service (Tesseract)
+				const fallbackService = (this.ocrService as any).fallbackService;
+				if (fallbackService instanceof TesseractOCRService) {
+					await fallbackService.terminate();
+				}
+			}
+
+			// Create new primary service
+			let primaryService = await createOCRService(this.settings);
+
+			// If cloud backend selected, wrap with OCRFallbackHandler if fallback enabled
+			if (this.settings.ocrBackend !== 'tesseract' && this.settings.enableOcrFallback) {
+				const fallbackService = new TesseractOCRService();
+				await fallbackService.initialize();
+				this.ocrService = new OCRFallbackHandler(
+					primaryService,
+					fallbackService,
+					this.settings.enableOcrFallback
+				);
+				console.log(`OCR service reinitialized with ${this.settings.ocrBackend} backend and Tesseract fallback`);
+			} else {
+				this.ocrService = primaryService;
+				console.log(`OCR service reinitialized with ${this.settings.ocrBackend} backend`);
+			}
+
+			// Reinitialize ImagePreprocessor if preprocessing enabled
+			if (this.settings.enableImagePreprocessing && this.settings.ocrBackend !== 'tesseract') {
+				this.imagePreprocessor = new ImagePreprocessor(
+					this.settings.maxImageDimension,
+					this.settings.maxImageFileSize
+				);
+				console.log('Image preprocessor reinitialized');
+			} else {
+				this.imagePreprocessor = null;
+			}
+		} catch (error) {
+			console.error('Failed to reinitialize OCR service:', error);
+			new Notice('Failed to reinitialize OCR service. Please reload Obsidian.');
+			throw error;
+		}
+	}
 }
 
 /**
@@ -4315,6 +4366,16 @@ class CloudOCRSettingsUI {
 				.onChange(async (value) => {
 					this.plugin.settings.ocrBackend = value as 'tesseract' | 'openai' | 'google';
 					await this.plugin.saveSettings();
+
+					// Reinitialize OCR service with new backend
+					try {
+						await this.plugin.reinitializeOCRService();
+						new Notice(`OCR backend switched to ${value}`);
+					} catch (error) {
+						console.error('Failed to switch OCR backend:', error);
+						new Notice('Failed to switch OCR backend. Please reload Obsidian.');
+					}
+
 					// Trigger a refresh of the settings display
 					if (this.plugin.settingTab) {
 						this.plugin.settingTab.display();
@@ -4370,6 +4431,14 @@ class CloudOCRSettingsUI {
 				.onChange(async (value) => {
 					this.plugin.settings.openaiApiKey = value;
 					await this.plugin.saveSettings();
+					// Reinitialize service if OpenAI is the current backend
+					if (this.plugin.settings.ocrBackend === 'openai' && value) {
+						try {
+							await this.plugin.reinitializeOCRService();
+						} catch (error) {
+							console.error('Failed to reinitialize OCR service:', error);
+						}
+					}
 				}))
 			.addButton(button => button
 				.setButtonText('Test Connection')
@@ -4414,6 +4483,14 @@ class CloudOCRSettingsUI {
 				.onChange(async (value) => {
 					this.plugin.settings.googleCloudApiKey = value;
 					await this.plugin.saveSettings();
+					// Reinitialize service if Google is the current backend
+					if (this.plugin.settings.ocrBackend === 'google' && value) {
+						try {
+							await this.plugin.reinitializeOCRService();
+						} catch (error) {
+							console.error('Failed to reinitialize OCR service:', error);
+						}
+					}
 				}))
 			.addButton(button => button
 				.setButtonText('Test Connection')
