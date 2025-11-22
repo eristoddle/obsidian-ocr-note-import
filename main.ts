@@ -1,5 +1,10 @@
-import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, TFolder, Vault, normalizePath, Modal, Platform } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, TFolder, Vault, normalizePath, Modal, Platform, moment } from 'obsidian';
 import { createWorker, Worker } from 'tesseract.js';
+import {
+	createDailyNote,
+	getAllDailyNotes,
+	getDailyNote as getDailyNoteFromPlugin
+} from 'obsidian-daily-notes-interface';
 
 /**
  * Platform detection helper class
@@ -1418,32 +1423,37 @@ class VaultManager {
 
 	/**
 	 * Get or create a daily note for a specific date
+	 * Uses Obsidian's daily notes settings (format, folder, template)
 	 */
 	async getDailyNote(date: Date): Promise<TFile> {
-		// Format date as YYYY-MM-DD
-		const dateStr = date.toISOString().split('T')[0];
+		// Convert to moment using local time (not UTC)
+		const momentDate = moment(date);
+		console.log('[getDailyNote] Called with date:', momentDate.format('YYYY-MM-DD'));
 
-		// Try to find existing daily note
-		// Check common daily note locations
-		const possiblePaths = [
-			`${dateStr}.md`,
-			`Daily Notes/${dateStr}.md`,
-			`Journal/${dateStr}.md`,
-			`daily/${dateStr}.md`
-		];
-
-		for (const path of possiblePaths) {
-			const file = this.vault.getAbstractFileByPath(path);
-			if (file instanceof TFile) {
-				return file;
+		// Try to get existing daily note
+		// getAllDailyNotes() throws an error if the folder doesn't exist yet
+		let dailyNote: TFile | null = null;
+		try {
+			const allDailyNotes = getAllDailyNotes();
+			console.log('[getDailyNote] Found', Object.keys(allDailyNotes).length, 'existing daily notes');
+			dailyNote = getDailyNoteFromPlugin(momentDate, allDailyNotes);
+			if (dailyNote) {
+				console.log('[getDailyNote] Found existing daily note at:', dailyNote.path);
 			}
+		} catch (error) {
+			// Folder doesn't exist yet, that's okay - createDailyNote will create it
+			console.log('[getDailyNote] Daily notes folder does not exist yet, will be created');
 		}
 
-		// If not found, create a new daily note in the root
-		const filePath = `${dateStr}.md`;
-		const content = `# ${dateStr}\n\n`;
+		// If not found, create it using Obsidian's daily notes settings
+		// This will automatically handle folder creation and template application
+		if (!dailyNote) {
+			console.log('[getDailyNote] Creating new daily note...');
+			dailyNote = await createDailyNote(momentDate);
+			console.log('[getDailyNote] Created daily note at:', dailyNote.path);
+		}
 
-		return await this.vault.create(filePath, content);
+		return dailyNote;
 	}
 
 	/**
