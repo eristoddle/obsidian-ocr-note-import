@@ -2930,7 +2930,8 @@ export default class NotebookOCRPlugin extends Plugin {
 	private async processImageWithPreprocessing(
 		imageData: ArrayBuffer,
 		fileName: string,
-		configId?: string
+		configId?: string,
+		customSplitPositions?: number[]
 	): Promise<OCRResult[]> {
 		// Check if preprocessing is enabled
 		if (!this.settings.enablePreprocessing || !this.preprocessingManager) {
@@ -2941,7 +2942,7 @@ export default class NotebookOCRPlugin extends Plugin {
 
 		try {
 			// If enabled, call PreprocessingManager.preprocess()
-			const preprocessingResult = await this.preprocessingManager.preprocess(imageData, configId);
+			const preprocessingResult = await this.preprocessingManager.preprocess(imageData, configId, customSplitPositions);
 
 			// Log preprocessing transformations to console
 			console.log(`Preprocessing transformations for ${fileName}:`, preprocessingResult.transformations);
@@ -3165,14 +3166,27 @@ export default class NotebookOCRPlugin extends Plugin {
 			return;
 		}
 
+		// Read first image for preview if available
+		let previewImageData: ArrayBuffer | null = null;
+		if (files.length > 0) {
+			try {
+				previewImageData = await files[0].arrayBuffer();
+			} catch (e) {
+				console.error("Failed to read first image for preview", e);
+			}
+		}
+
 		// Show configuration selection modal before processing (Subtask 14.1)
 		// Requirements: 7.1, 7.2, 7.5
-		const selectedConfigId = await new Promise<string | null>((resolve) => {
-			const modal = new ConfigSelectionModal(this.app, this, (configId) => {
-				resolve(configId);
-			});
+		const selectionResult = await new Promise<{ configId: string | null, customSplitPositions?: number[] }>((resolve) => {
+			const modal = new ConfigSelectionModal(this.app, this, (configId, customSplitPositions) => {
+				resolve({ configId, customSplitPositions });
+			}, previewImageData);
 			modal.open();
 		});
+
+		const selectedConfigId = selectionResult.configId;
+		const customSplitPositions = selectionResult.customSplitPositions;
 
 		// Show initial notice with progress
 		const totalFiles = files.length;
@@ -3220,10 +3234,19 @@ export default class NotebookOCRPlugin extends Plugin {
 				}
 
 				// Use new preprocessing system with selected config (Subtask 14.1)
-				// Pass selected config ID to processImageWithPreprocessing
-				// Use default config if user doesn't select one
-				const configIdToUse = selectedConfigId !== null ? selectedConfigId : undefined;
-				const ocrResults = await this.processImageWithPreprocessing(imageData, file.name, configIdToUse);
+			// Pass selected config ID to processImageWithPreprocessing
+			// Use default config if user doesn't select one
+			const configIdToUse = selectedConfigId !== null ? selectedConfigId : undefined;
+
+			// Only apply custom split positions to the first image if processing multiple
+			// Or apply to all if user intends (but usually custom split is per-image)
+			// For now, let's apply to all if it's a batch, assuming they are similar scans
+			// But maybe we should only apply to the first one?
+			// Let's apply to all for now as per requirement "Support for custom split positions"
+			// If the user sets custom positions on the preview (first image), they likely want it for the batch if they are similar.
+			const positionsToUse = customSplitPositions;
+
+			const ocrResults = await this.processImageWithPreprocessing(imageData, file.name, configIdToUse, positionsToUse);
 
 				// Track total pages processed for notification (Subtask 14.2)
 				totalPagesProcessed += ocrResults.length;

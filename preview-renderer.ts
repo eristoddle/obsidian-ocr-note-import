@@ -159,8 +159,7 @@ export class PreviewRenderer {
             // Draw background
             ctx.fillStyle = this.PAGE_LABEL_COLOR;
             ctx.globalAlpha = 0.8;
-            ctx.beginPath();
-            ctx.roundRect(x - 5, y - 2, textWidth + 10, textHeight + 4, 4);
+            this.drawRoundedRect(ctx, x - 5, y - 2, textWidth + 10, textHeight + 4, 4);
             ctx.fill();
 
             // Draw text
@@ -239,8 +238,7 @@ export class PreviewRenderer {
                 // Draw background
                 ctx.fillStyle = this.PAGE_LABEL_COLOR;
                 ctx.globalAlpha = 0.8;
-                ctx.beginPath();
-                ctx.roundRect(x - 5, y - textHeight / 2 - 2, textWidth + 10, textHeight + 4, 4);
+                this.drawRoundedRect(ctx, x - 5, y - textHeight / 2 - 2, textWidth + 10, textHeight + 4, 4);
                 ctx.fill();
 
                 // Draw text
@@ -269,8 +267,7 @@ export class PreviewRenderer {
                     // Draw background
                     ctx.fillStyle = this.PAGE_LABEL_COLOR;
                     ctx.globalAlpha = 0.8;
-                    ctx.beginPath();
-                    ctx.roundRect(x - 5, y - textHeight / 2 - 2, textWidth + 10, textHeight + 4, 4);
+                    this.drawRoundedRect(ctx, x - 5, y - textHeight / 2 - 2, textWidth + 10, textHeight + 4, 4);
                     ctx.fill();
 
                     // Draw text
@@ -374,5 +371,29 @@ export class PreviewRenderer {
 
         // Use the smaller scale to ensure image fits in both dimensions
         return Math.min(widthScale, heightScale, 1.0); // Don't scale up
+    }
+
+    /**
+     * Helper to draw rounded rectangle (polyfill for ctx.roundRect)
+     */
+    private drawRoundedRect(
+        ctx: CanvasRenderingContext2D,
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+        radius: number
+    ): void {
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + width - radius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        ctx.lineTo(x + width, y + height - radius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        ctx.lineTo(x + radius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.closePath();
     }
 }

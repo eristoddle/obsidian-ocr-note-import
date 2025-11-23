@@ -70,7 +70,8 @@ export class PreprocessingManager {
      */
     async preprocess(
         imageData: ArrayBuffer,
-        configId?: string
+        configId?: string,
+        customSplitPositions?: number[]
     ): Promise<PreprocessingResult> {
         // Get configuration from ConfigManager (use default if no ID provided)
         const config = configId
@@ -138,7 +139,7 @@ export class PreprocessingManager {
                 );
             }
 
-            pages = await this.splitter.split(currentImage, config.split);
+            pages = await this.splitter.split(currentImage, config.split, customSplitPositions);
             transformations.push(
                 `Split ${config.split.direction} into ${config.split.pageCount} pages`
             );

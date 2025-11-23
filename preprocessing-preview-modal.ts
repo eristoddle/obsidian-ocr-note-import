@@ -517,22 +517,59 @@ export class PreprocessingPreviewModal extends Modal {
                 this.state.customSplitPositions = newPositions;
                 this.renderPreview();
             }
-        } else if (this.state.config.split.enabled) {
+        } else {
             // Check if hovering over a split line
-            const splitPositions = this.state.customSplitPositions || this.state.splitPositions;
-            const lineIndex = this.calculator.findClosestSplitLine(
-                imageX,
-                imageY,
-                splitPositions,
-                this.state.config.split.direction,
-                20 / scale
-            );
+            let cursor = 'default';
 
-            if (lineIndex !== null) {
-                this.canvasEl.style.cursor = 'grab';
-            } else {
-                this.canvasEl.style.cursor = 'default';
+            if (this.state.config.split.enabled) {
+                const splitPositions = this.state.customSplitPositions || this.state.splitPositions;
+                const lineIndex = this.calculator.findClosestSplitLine(
+                    imageX,
+                    imageY,
+                    splitPositions,
+                    this.state.config.split.direction,
+                    20 / scale
+                );
+
+                if (lineIndex !== null) {
+                    cursor = 'grab';
+                    this.interaction.hoveredLine = lineIndex;
+                } else {
+                    this.interaction.hoveredLine = null;
+                }
             }
+
+            // Check if hovering over a page region
+            let hoveredRegionIndex: number | null = null;
+
+            // Recalculate regions to be sure we have the latest
+            const pageRegions = this.state.pageRegions;
+
+            for (let i = 0; i < pageRegions.length; i++) {
+                const region = pageRegions[i];
+                if (imageX >= region.x && imageX <= region.x + region.width &&
+                    imageY >= region.y && imageY <= region.y + region.height) {
+                    hoveredRegionIndex = i;
+                    break;
+                }
+            }
+
+            // Update state if changed
+            if (this.state.highlightedRegion !== hoveredRegionIndex) {
+                this.state.highlightedRegion = hoveredRegionIndex;
+                this.interaction.hoveredRegion = hoveredRegionIndex;
+                this.renderPreview();
+
+                // Show tooltip if hovering a region
+                if (hoveredRegionIndex !== null) {
+                    const region = pageRegions[hoveredRegionIndex];
+                    this.canvasEl.title = `Page ${region.pageNumber}: ${Math.round(region.width)}x${Math.round(region.height)}px`;
+                } else {
+                    this.canvasEl.title = '';
+                }
+            }
+
+            this.canvasEl.style.cursor = cursor;
         }
     }
 

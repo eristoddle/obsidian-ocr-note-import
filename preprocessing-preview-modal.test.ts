@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as fc from 'fast-check';
 import { PreprocessingPreviewModal } from './preprocessing-preview-modal';
-import { PreprocessingConfig, SplitDirection, RotationTiming } from './preprocessing-types';
+import { PreprocessingConfig, SplitDirection, RotationTiming, RotationAngle } from './preprocessing-types';
 import { App } from 'obsidian';
 
 // Mock canvas operations for testing
@@ -23,6 +23,78 @@ class MockCanvasRenderingContext2D {
     }
 
     fillRect(...args: any[]): void {
+        // Mock implementation
+    }
+
+    roundRect(...args: any[]): void {
+        // Mock implementation
+    }
+
+    clearRect(...args: any[]): void {
+        // Mock implementation
+    }
+
+    fill(...args: any[]): void {
+        // Mock implementation
+    }
+
+    arc(...args: any[]): void {
+        // Mock implementation
+    }
+
+    closePath(): void {
+        // Mock implementation
+    }
+
+    quadraticCurveTo(...args: any[]): void {
+        // Mock implementation
+    }
+
+    strokeRect(...args: any[]): void {
+        // Mock implementation
+    }
+
+    beginPath(): void {
+        // Mock implementation
+    }
+
+    moveTo(...args: any[]): void {
+        // Mock implementation
+    }
+
+    lineTo(...args: any[]): void {
+        // Mock implementation
+    }
+
+    stroke(): void {
+        // Mock implementation
+    }
+
+    fillText(...args: any[]): void {
+        // Mock implementation
+    }
+
+    measureText(text: string): TextMetrics {
+        return { width: text.length * 5 } as TextMetrics;
+    }
+
+    save(): void {
+        // Mock implementation
+    }
+
+    restore(): void {
+        // Mock implementation
+    }
+
+    translate(...args: any[]): void {
+        // Mock implementation
+    }
+
+    rotate(...args: any[]): void {
+        // Mock implementation
+    }
+
+    scale(...args: any[]): void {
         // Mock implementation
     }
 }
@@ -146,7 +218,8 @@ describe('PreprocessingPreviewModal', () => {
                             },
                             rotation: {
                                 enabled: false,
-                                timing: RotationTiming.BEFORE_SPLIT
+                                timing: RotationTiming.BEFORE_SPLIT,
+                                wholeImageAngle: RotationAngle.NONE
                             }
                         };
 
@@ -214,7 +287,8 @@ describe('PreprocessingPreviewModal', () => {
                             },
                             rotation: {
                                 enabled: false,
-                                timing: RotationTiming.BEFORE_SPLIT
+                                timing: RotationTiming.BEFORE_SPLIT,
+                                wholeImageAngle: RotationAngle.NONE
                             }
                         };
 
@@ -276,7 +350,8 @@ describe('PreprocessingPreviewModal', () => {
                             },
                             rotation: {
                                 enabled: false,
-                                timing: RotationTiming.BEFORE_SPLIT
+                                timing: RotationTiming.BEFORE_SPLIT,
+                                wholeImageAngle: RotationAngle.NONE
                             }
                         };
 
@@ -336,7 +411,8 @@ describe('PreprocessingPreviewModal', () => {
                             },
                             rotation: {
                                 enabled: false,
-                                timing: RotationTiming.BEFORE_SPLIT
+                                timing: RotationTiming.BEFORE_SPLIT,
+                                wholeImageAngle: RotationAngle.NONE
                             }
                         };
 
@@ -370,6 +446,153 @@ describe('PreprocessingPreviewModal', () => {
                 { numRuns: 100 }
             );
         });
+        /**
+         * Feature: preprocessing-preview-visualization, Property 22: Hover highlights region and shows dimensions
+         * Validates: Requirements 6.5
+         *
+         * When the mouse hovers over a page region in the preview, that region should be highlighted
+         * and a tooltip showing the region's dimensions should be displayed
+         */
+        it('should highlight region and show tooltip on hover', async () => {
+            await fc.assert(
+                fc.asyncProperty(
+                    // Generate random image dimensions
+                    fc.integer({ min: 500, max: 2000 }),
+                    fc.integer({ min: 500, max: 2000 }),
+                    // Generate random mouse position (normalized 0-1)
+                    fc.float({ min: 0, max: 1 }),
+                    fc.float({ min: 0, max: 1 }),
+                    async (width, height, mouseXRatio, mouseYRatio) => {
+                        // Create a test image
+                        const imageData = await createTestImage(width, height);
+
+                        // Create a config with splitting enabled (2 pages vertical)
+                        const config: PreprocessingConfig = {
+                            id: 'test',
+                            name: 'Test Config',
+                            description: 'Test',
+                            preset: 'custom' as any,
+                            split: {
+                                enabled: true,
+                                direction: SplitDirection.VERTICAL,
+                                pageCount: 2
+                            },
+                            rotation: {
+                                enabled: false,
+                                timing: RotationTiming.BEFORE_SPLIT
+                            }
+                        };
+
+                        // Create modal instance
+                        const modal = new PreprocessingPreviewModal(mockApp, {
+                            imageData,
+                            config,
+                            mode: 'testing'
+                        });
+
+                        // Mock contentEl for onOpen
+                        const mockElement: any = {
+                            createEl: vi.fn(() => document.createElement('canvas')),
+                            createDiv: vi.fn(() => mockElement),
+                            setText: vi.fn(),
+                            style: {},
+                            empty: vi.fn(),
+                            addClass: vi.fn()
+                        };
+
+                        const mockContentEl = {
+                            empty: vi.fn(),
+                            addClass: vi.fn(),
+                            createDiv: vi.fn(() => mockElement),
+                            createEl: vi.fn(() => mockElement)
+                        };
+                        (modal as any).contentEl = mockContentEl;
+
+                        // Open modal to initialize canvas
+                        modal.onOpen();
+
+                        // Wait for image loading (simulated)
+                        const downscaleResult = await (modal as any).downscaleImage(imageData);
+                        (modal as any).state.imageData = downscaleResult.preview;
+                        (modal as any).state.image = { width: downscaleResult.preview.byteLength > 0 ? 1500 : 100, height: 1000 }; // Mock loaded image
+                        (modal as any).state.scale = downscaleResult.scale;
+
+                        // Initialize regions
+                        (modal as any).state.splitPositions = [Math.floor((modal as any).state.image.width / 2)];
+                        (modal as any).state.pageRegions = [
+                            { x: 0, y: 0, width: (modal as any).state.image.width / 2, height: (modal as any).state.image.height, pageNumber: 1 },
+                            { x: (modal as any).state.image.width / 2, y: 0, width: (modal as any).state.image.width / 2, height: (modal as any).state.image.height, pageNumber: 2 }
+                        ];
+
+                        // Get canvas and mock getBoundingClientRect
+                        const canvas = (modal as any).canvasEl;
+                        canvas.width = 800;
+                        canvas.height = 600;
+                        canvas.getBoundingClientRect = () => ({
+                            left: 0,
+                            top: 0,
+                            width: 800,
+                            height: 600,
+                            right: 800,
+                            bottom: 600,
+                            x: 0,
+                            y: 0,
+                            toJSON: () => {}
+                        });
+
+                        // Simulate mouse move
+                        const clientX = mouseXRatio * 800;
+                        const clientY = mouseYRatio * 600;
+
+                        // Manually trigger handleMouseMove since we can't easily dispatch real events to the private handler
+                        // But we can access the private method
+                        const event = {
+                            clientX,
+                            clientY,
+                            preventDefault: vi.fn(),
+                            stopPropagation: vi.fn()
+                        } as any;
+
+                        (modal as any).handleMouseMove(event);
+
+                        // Check if a region is highlighted
+                        // We need to calculate which region should be highlighted based on the mouse position
+                        const scale = (modal as any).renderer.calculateScale(
+                            (modal as any).state.image.width,
+                            (modal as any).state.image.height,
+                            800,
+                            600
+                        );
+
+                        const imageX = clientX / scale;
+                        const imageY = clientY / scale;
+
+                        // Determine expected region
+                        let expectedRegionIndex: number | null = null;
+                        const regions = (modal as any).state.pageRegions;
+                        for (let i = 0; i < regions.length; i++) {
+                            const r = regions[i];
+                            if (imageX >= r.x && imageX <= r.x + r.width &&
+                                imageY >= r.y && imageY <= r.y + r.height) {
+                                expectedRegionIndex = i;
+                                break;
+                            }
+                        }
+
+                        // Property: The highlighted region state should match the expected region index
+                        expect((modal as any).state.highlightedRegion).toBe(expectedRegionIndex);
+
+                        // Property: Tooltip should be set if a region is highlighted
+                        if (expectedRegionIndex !== null) {
+                            expect(canvas.title).toContain(`Page ${regions[expectedRegionIndex].pageNumber}`);
+                        } else {
+                            expect(canvas.title).toBe('');
+                        }
+                    }
+                ),
+                { numRuns: 50 }
+            );
+        });
     });
 
     describe('Unit Tests', () => {
@@ -380,6 +603,7 @@ describe('PreprocessingPreviewModal', () => {
                 id: 'test',
                 name: 'Test Config',
                 description: 'Test',
+                preset: 'single-page' as any,
                 split: {
                     enabled: false,
                     direction: SplitDirection.VERTICAL,
@@ -387,7 +611,7 @@ describe('PreprocessingPreviewModal', () => {
                 },
                 rotation: {
                     enabled: false,
-                    angle: 0,
+                    wholeImageAngle: RotationAngle.NONE,
                     timing: RotationTiming.BEFORE_SPLIT
                 }
             };
@@ -413,6 +637,7 @@ describe('PreprocessingPreviewModal', () => {
                 id: 'test',
                 name: 'Test Config',
                 description: 'Test',
+                preset: 'single-page' as any,
                 split: {
                     enabled: false,
                     direction: SplitDirection.VERTICAL,
@@ -420,7 +645,7 @@ describe('PreprocessingPreviewModal', () => {
                 },
                 rotation: {
                     enabled: false,
-                    angle: 0,
+                    wholeImageAngle: RotationAngle.NONE,
                     timing: RotationTiming.BEFORE_SPLIT
                 }
             };
@@ -449,6 +674,7 @@ describe('PreprocessingPreviewModal', () => {
                 id: 'test',
                 name: 'Test Config',
                 description: 'Test',
+                preset: 'single-page' as any,
                 split: {
                     enabled: false,
                     direction: SplitDirection.VERTICAL,
@@ -456,7 +682,7 @@ describe('PreprocessingPreviewModal', () => {
                 },
                 rotation: {
                     enabled: false,
-                    angle: 0,
+                    wholeImageAngle: RotationAngle.NONE,
                     timing: RotationTiming.BEFORE_SPLIT
                 }
             };

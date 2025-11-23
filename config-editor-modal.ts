@@ -307,12 +307,21 @@ export class ConfigEditorModal extends Modal {
 	/**
 	 * Render save and cancel buttons
 	 */
+	/**
+	 * Render save and cancel buttons
+	 */
 	private renderButtons(containerEl: HTMLElement): void {
 		const buttonContainer = containerEl.createDiv({ cls: 'modal-button-container' });
 		buttonContainer.style.display = 'flex';
 		buttonContainer.style.gap = '10px';
 		buttonContainer.style.justifyContent = 'flex-end';
 		buttonContainer.style.marginTop = '20px';
+
+		// Preview button
+		const previewButton = buttonContainer.createEl('button', { text: 'Preview with Sample Image' });
+		previewButton.addEventListener('click', async () => {
+			await this.openPreview();
+		});
 
 		// Cancel button
 		const cancelButton = buttonContainer.createEl('button', { text: 'Cancel' });
@@ -325,6 +334,94 @@ export class ConfigEditorModal extends Modal {
 		saveButton.classList.add('mod-cta');
 		saveButton.addEventListener('click', async () => {
 			await this.handleSave();
+		});
+	}
+
+	/**
+	 * Open preview with sample image
+	 */
+	private async openPreview(): Promise<void> {
+		const sampleImage = await this.createSampleImage();
+
+		// Import dynamically to avoid circular dependencies if possible,
+		// but here we need to import it at the top.
+		// Assuming PreprocessingPreviewModal is imported.
+		const { PreprocessingPreviewModal } = await import('./preprocessing-preview-modal');
+
+		const previewModal = new PreprocessingPreviewModal(
+			this.app,
+			{
+				imageData: sampleImage,
+				config: this.config,
+				mode: 'testing',
+				onConfirm: (customSplitPositions) => {
+					if (customSplitPositions && this.config.split.enabled) {
+						this.config.split.customPositions = customSplitPositions;
+						new Notice('Custom split positions saved to configuration');
+					}
+				}
+			}
+		);
+		previewModal.open();
+	}
+
+	/**
+	 * Create a sample image for previewing
+	 */
+	private async createSampleImage(): Promise<ArrayBuffer> {
+		const canvas = document.createElement('canvas');
+		canvas.width = 1000;
+		canvas.height = 800;
+		const ctx = canvas.getContext('2d');
+
+		if (!ctx) {
+			throw new Error('Failed to create canvas context');
+		}
+
+		// Draw background
+		ctx.fillStyle = '#f0f0f0';
+		ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+		// Draw some "notebook" lines
+		ctx.strokeStyle = '#ccc';
+		ctx.lineWidth = 1;
+
+		// Vertical divider hint
+		ctx.beginPath();
+		ctx.moveTo(500, 0);
+		ctx.lineTo(500, 800);
+		ctx.stroke();
+
+		// Horizontal lines
+		for (let i = 40; i < 800; i += 30) {
+			ctx.beginPath();
+			ctx.moveTo(20, i);
+			ctx.lineTo(980, i);
+			ctx.stroke();
+		}
+
+		// Add some text
+		ctx.fillStyle = '#333';
+		ctx.font = '24px sans-serif';
+		ctx.fillText('Sample Notebook Page (Left)', 100, 100);
+		ctx.fillText('Sample Notebook Page (Right)', 600, 100);
+
+		ctx.font = '16px sans-serif';
+		ctx.fillText('This is a generated sample image for testing your configuration.', 100, 150);
+		ctx.fillText('Use this to verify split lines and rotation.', 600, 150);
+
+		// Convert to ArrayBuffer
+		return new Promise((resolve, reject) => {
+			canvas.toBlob((blob) => {
+				if (!blob) {
+					reject(new Error('Failed to create sample image blob'));
+					return;
+				}
+				const reader = new FileReader();
+				reader.onload = () => resolve(reader.result as ArrayBuffer);
+				reader.onerror = () => reject(new Error('Failed to read sample image blob'));
+				reader.readAsArrayBuffer(blob);
+			}, 'image/jpeg');
 		});
 	}
 

@@ -35,7 +35,7 @@ export class ImageSplitter {
      * @returns Array of page images as ArrayBuffers
      * @throws Error if image loading or canvas operations fail
      */
-    async split(imageData: ArrayBuffer, config: SplitConfig): Promise<ArrayBuffer[]> {
+    async split(imageData: ArrayBuffer, config: SplitConfig, customPositions?: number[]): Promise<ArrayBuffer[]> {
         if (!config.enabled) {
             return [imageData];
         }
@@ -43,31 +43,69 @@ export class ImageSplitter {
         const img = await this.loadImage(imageData);
         const pages: ArrayBuffer[] = [];
 
-        if (config.direction === SplitDirection.HORIZONTAL) {
-            // Split horizontally (top to bottom)
-            const pageHeight = Math.floor(img.height / config.pageCount);
+        // Use custom positions if provided, otherwise calculate equal splits
+        if (customPositions && customPositions.length > 0) {
+            // Sort positions just in case
+            const sortedPositions = [...customPositions].sort((a, b) => a - b);
 
-            for (let i = 0; i < config.pageCount; i++) {
-                const y = i * pageHeight;
-                const height = (i === config.pageCount - 1)
-                    ? img.height - y  // Last page gets remaining pixels
-                    : pageHeight;
+            // Add 0 as start and image dimension as end
+            const boundaries = [0, ...sortedPositions];
 
-                const pageData = await this.extractRegion(img, 0, y, img.width, height);
-                pages.push(pageData);
+            if (config.direction === SplitDirection.HORIZONTAL) {
+                boundaries.push(img.height);
+
+                for (let i = 0; i < boundaries.length - 1; i++) {
+                    const start = boundaries[i];
+                    const end = boundaries[i + 1];
+                    const height = end - start;
+
+                    if (height > 0) {
+                        const pageData = await this.extractRegion(img, 0, start, img.width, height);
+                        pages.push(pageData);
+                    }
+                }
+            } else {
+                boundaries.push(img.width);
+
+                for (let i = 0; i < boundaries.length - 1; i++) {
+                    const start = boundaries[i];
+                    const end = boundaries[i + 1];
+                    const width = end - start;
+
+                    if (width > 0) {
+                        const pageData = await this.extractRegion(img, start, 0, width, img.height);
+                        pages.push(pageData);
+                    }
+                }
             }
         } else {
-            // Split vertically (left to right)
-            const pageWidth = Math.floor(img.width / config.pageCount);
+            // Standard equal splitting
+            if (config.direction === SplitDirection.HORIZONTAL) {
+                // Split horizontally (top to bottom)
+                const pageHeight = Math.floor(img.height / config.pageCount);
 
-            for (let i = 0; i < config.pageCount; i++) {
-                const x = i * pageWidth;
-                const width = (i === config.pageCount - 1)
-                    ? img.width - x  // Last page gets remaining pixels
-                    : pageWidth;
+                for (let i = 0; i < config.pageCount; i++) {
+                    const y = i * pageHeight;
+                    const height = (i === config.pageCount - 1)
+                        ? img.height - y  // Last page gets remaining pixels
+                        : pageHeight;
 
-                const pageData = await this.extractRegion(img, x, 0, width, img.height);
-                pages.push(pageData);
+                    const pageData = await this.extractRegion(img, 0, y, img.width, height);
+                    pages.push(pageData);
+                }
+            } else {
+                // Split vertically (left to right)
+                const pageWidth = Math.floor(img.width / config.pageCount);
+
+                for (let i = 0; i < config.pageCount; i++) {
+                    const x = i * pageWidth;
+                    const width = (i === config.pageCount - 1)
+                        ? img.width - x  // Last page gets remaining pixels
+                        : pageWidth;
+
+                    const pageData = await this.extractRegion(img, x, 0, width, img.height);
+                    pages.push(pageData);
+                }
             }
         }
 

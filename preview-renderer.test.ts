@@ -12,8 +12,8 @@ import { JSDOM } from 'jsdom';
 // Setup DOM environment for canvas
 const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
 global.document = dom.window.document as any;
-global.HTMLCanvasElement = dom.window.HTMLCanvasElement as any;
-global.HTMLImageElement = dom.window.HTMLImageElement as any;
+global.HTMLCanvasElement = (dom.window as any).HTMLCanvasElement as any;
+global.HTMLImageElement = (dom.window as any).HTMLImageElement as any;
 
 // Mock canvas 2D context
 const mockContext = {
@@ -34,12 +34,14 @@ const mockContext = {
     measureText: (text: string) => ({ width: text.length * 8 }),
     font: '',
     textBaseline: '',
-    strokeRect: () => {}
+    strokeRect: () => {},
+    quadraticCurveTo: () => {},
+    closePath: () => {}
 };
 
 // Override getContext to return our mock
-const originalGetContext = dom.window.HTMLCanvasElement.prototype.getContext;
-dom.window.HTMLCanvasElement.prototype.getContext = function(contextType: string) {
+const originalGetContext = (dom.window as any).HTMLCanvasElement.prototype.getContext;
+(dom.window as any).HTMLCanvasElement.prototype.getContext = function(contextType: string) {
     if (contextType === '2d') {
         return mockContext as any;
     }

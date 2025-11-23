@@ -1,0 +1,71 @@
+/* Preprocessing Preview Modal Styles */
+
+.preprocessing-preview-modal {
+    max-width: 90vw;
+    max-height: 90vh;
+    width: 1000px;
+    height: 800px;
+    display: flex;
+    flex-direction: column;
+}
+
+.preprocessing-preview-modal .modal-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+    padding: 0;
+}
+
+.preprocessing-preview-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--background-secondary);
+    overflow: auto;
+    padding: 20px;
+    position: relative;
+}
+
+.preprocessing-preview-canvas {
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    background-color: white;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.preprocessing-preview-info {
+    padding: 10px 20px;
+    background-color: var(--background-primary);
+    border-top: 1px solid var(--background-modifier-border);
+    font-size: 0.9em;
+    color: var(--text-muted);
+}
+
+.preprocessing-preview-info ul {
+    margin: 5px 0;
+    padding-left: 20px;
+}
+
+.preprocessing-preview-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+}
+
+.preprocessing-preview-loading .spinner {
+    margin-bottom: 10px;
+}
+
+/* Modal Button Container override if needed */
+.preprocessing-preview-modal .modal-button-container {
+    padding: 15px 20px;
+    border-top: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+}
