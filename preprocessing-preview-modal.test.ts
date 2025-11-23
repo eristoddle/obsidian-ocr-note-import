@@ -704,4 +704,127 @@ describe('PreprocessingPreviewModal', () => {
             expect(previewDimensions.height).toBe(1500);
         });
     });
+    describe('Interaction Tests', () => {
+        /**
+         * Feature: preprocessing-preview-visualization, Property 9: Split line dragging updates positions
+         * Validates: Requirements 3.1
+         */
+        it('should update split positions when dragging split lines', async () => {
+            const imageData = await createTestImage(1000, 1000);
+            const config: PreprocessingConfig = {
+                id: 'test',
+                name: 'Test Config',
+                description: 'Test',
+                preset: 'custom' as any,
+                split: {
+                    enabled: true,
+                    direction: SplitDirection.VERTICAL,
+                    pageCount: 2
+                },
+                rotation: { enabled: false, timing: RotationTiming.BEFORE_SPLIT }
+            };
+
+            const modal = new PreprocessingPreviewModal(mockApp, {
+                imageData,
+                config,
+                mode: 'testing'
+            });
+
+            // Mock internal state
+            (modal as any).state.image = { width: 1000, height: 1000 };
+            (modal as any).state.splitPositions = [500];
+            (modal as any).state.customSplitPositions = [500];
+
+            // Mock canvas
+            const mockCanvas = document.createElement('canvas');
+            mockCanvas.width = 800;
+            mockCanvas.height = 600;
+            mockCanvas.getBoundingClientRect = () => ({
+                left: 0, top: 0, width: 800, height: 600, right: 800, bottom: 600, x: 0, y: 0, toJSON: () => {}
+            });
+            (modal as any).canvasEl = mockCanvas;
+            (modal as any).renderer = {
+                calculateScale: () => 0.5 // Scale 1000px image to 500px on 800px canvas
+            };
+            (modal as any).calculator = {
+                findClosestSplitLine: () => 0, // Always find the first line
+                validateSplitPositions: () => ({ valid: true })
+            };
+            (modal as any).renderPreview = vi.fn();
+
+            // Simulate drag start
+            (modal as any).handleMouseDown({ clientX: 250, clientY: 0 } as any);
+            expect((modal as any).interaction.isDragging).toBe(true);
+
+            // Simulate drag move (move 50px right -> 100px in image coordinates)
+            (modal as any).handleMouseMove({ clientX: 300, clientY: 0 } as any);
+
+            // Check if position updated (250 -> 500px image coord, 300 -> 600px image coord)
+            expect((modal as any).state.customSplitPositions[0]).toBe(600);
+            expect((modal as any).renderPreview).toHaveBeenCalled();
+
+            // Simulate drag end
+            (modal as any).handleMouseUp({} as any);
+            expect((modal as any).interaction.isDragging).toBe(false);
+        });
+
+        /**
+         * Feature: preprocessing-preview-visualization, Property 14: Process button triggers OCR with configuration
+         * Validates: Requirements 4.3
+         */
+        it('should trigger onConfirm with custom positions when Process button is clicked', async () => {
+            const imageData = await createTestImage(1000, 1000);
+            const config: PreprocessingConfig = {
+                id: 'test',
+                name: 'Test Config',
+                description: 'Test',
+                preset: 'custom' as any,
+                split: { enabled: true, direction: SplitDirection.VERTICAL, pageCount: 2 },
+                rotation: { enabled: false, timing: RotationTiming.BEFORE_SPLIT }
+            };
+
+            const onConfirm = vi.fn();
+            const modal = new PreprocessingPreviewModal(mockApp, {
+                imageData,
+                config,
+                mode: 'processing',
+                onConfirm
+            });
+
+            // Set custom positions
+            (modal as any).state.customSplitPositions = [600];
+            (modal as any).close = vi.fn();
+
+            // Click process
+            (modal as any).handleConfirm();
+
+            expect(onConfirm).toHaveBeenCalledWith([600]);
+            expect((modal as any).close).toHaveBeenCalled();
+        });
+
+        /**
+         * Feature: preprocessing-preview-visualization, Property 15: Cancel button returns to configuration selection
+         * Validates: Requirements 4.4
+         */
+        it('should trigger onCancel when Cancel button is clicked', async () => {
+            const imageData = await createTestImage(1000, 1000);
+            const config = { id: 'test' } as any;
+            const onCancel = vi.fn();
+
+            const modal = new PreprocessingPreviewModal(mockApp, {
+                imageData,
+                config,
+                mode: 'processing',
+                onCancel
+            });
+
+            (modal as any).close = vi.fn();
+
+            // Click cancel
+            (modal as any).handleCancel();
+
+            expect(onCancel).toHaveBeenCalled();
+            expect((modal as any).close).toHaveBeenCalled();
+        });
+    });
 });
