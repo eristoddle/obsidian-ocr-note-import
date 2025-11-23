@@ -10,6 +10,10 @@ Transform your handwritten field notebook pages into searchable, organized digit
   - **Google Cloud Vision**: High accuracy with generous free tier (1,000 images/month)
 - **Intelligent Fallback**: Automatically falls back to local OCR if cloud services fail
 - **Image Preprocessing**: Automatic resizing and compression for optimal cloud OCR performance
+- **Notebook Page Preprocessing**: Automatically split and rotate multi-page notebook scans before OCR
+  - **Preset Configurations**: Quick setup for common notebook formats (pocket notebooks, A5, etc.)
+  - **Custom Configurations**: Define your own split and rotation settings
+  - **Smart Page Handling**: Create separate notes or combine pages with separators
 - **Pattern-Based Routing**: Define custom regex patterns to automatically route notes to specific locations
 - **Flexible Actions**:
   - Create new notes with custom titles, frontmatter, and content
@@ -121,6 +125,104 @@ Add tags to existing notes based on keywords.
 - Append to Arrays: Yes
 
 ## Configuration
+
+### Notebook Page Preprocessing
+
+The plugin can automatically split and rotate multi-page notebook scans before OCR processing. This is useful when you scan multiple notebook pages in a single image (e.g., two pocket notebook pages side-by-side, or A5 notebooks that need rotation).
+
+#### Enabling Preprocessing
+
+1. Go to Settings → Notebook OCR Plugin → Notebook Page Preprocessing
+2. Toggle "Enable Image Preprocessing"
+3. Select a default configuration or create a custom one
+
+#### Preset Configurations
+
+The plugin includes several preset configurations for common notebook formats:
+
+**Single Page (8.5x11)**
+- Standard single-page notebook scan
+- No splitting or rotation needed
+- Best for: Letter-sized notebooks, standard notebooks
+
+**Pocket Notebooks Side-by-Side (3.5x5.5)**
+- Two pocket notebook pages scanned horizontally side-by-side
+- Splits vertically into 2 pages (left to right)
+- Best for: Moleskine pocket notebooks, Field Notes, small notebooks
+
+**A5 Portrait**
+- A5 notebook scanned in portrait orientation
+- No splitting or rotation needed
+- Best for: A5 notebooks scanned correctly
+
+**A5 Landscape (needs rotation)**
+- A5 notebook scanned in landscape orientation
+- Rotates 90° clockwise to portrait
+- Best for: A5 notebooks scanned sideways
+
+#### Creating Custom Configurations
+
+1. Go to Settings → Notebook OCR Plugin → Notebook Page Preprocessing
+2. Click "Create Custom Configuration"
+3. Configure your settings:
+   - **Name**: Give your configuration a descriptive name
+   - **Description**: Optional description
+   - **Split Settings**:
+     - Enable/disable splitting
+     - Direction: Horizontal (top to bottom) or Vertical (left to right)
+     - Number of pages: 2, 3, or 4
+   - **Rotation Settings**:
+     - Enable/disable rotation
+     - Timing: Before split (whole image) or After split (per page)
+     - Rotation angle: 90°, 180°, or 270° clockwise
+4. Click "Save"
+
+#### Split Page Note Creation
+
+When processing split pages, you can choose how to create notes:
+
+**Separate Notes (Default)**
+- Creates one note per page
+- Page numbers are appended to note titles (e.g., "My Notes - Page 1", "My Notes - Page 2")
+- Best for: Treating each page as an independent note
+
+**Combined Note**
+- Creates a single note with all pages
+- Pages are separated by a configurable separator (default: `\n\n---\n\n`)
+- Best for: Keeping related pages together in one note
+
+To configure:
+1. Go to Settings → Notebook OCR Plugin → Notebook Page Preprocessing
+2. Under "Note Creation for Split Pages", select your preferred mode
+3. If using combined mode, customize the page separator
+
+#### Preprocessing Metadata
+
+You can optionally include preprocessing information in note frontmatter:
+
+1. Go to Settings → Notebook OCR Plugin → Notebook Page Preprocessing
+2. Toggle "Include Preprocessing Metadata"
+
+When enabled, notes will include frontmatter like:
+```yaml
+---
+preprocessing_config: Pocket Notebooks Side-by-Side (3.5x5.5)
+page_number: 1
+total_pages: 2
+split_direction: vertical
+ocr_provider: openai
+---
+```
+
+#### Selecting Configuration at Processing Time
+
+When processing an image, you can override the default configuration:
+
+1. Click the camera icon or use "Import from notebook images"
+2. A configuration selection modal will appear
+3. Choose a configuration or select "No Preprocessing"
+4. Select your image(s)
+5. The plugin will apply the selected configuration
 
 ### OCR Settings
 
@@ -528,6 +630,66 @@ The plugin adds the following commands to Obsidian:
 - Ensure the image format is supported by Tesseract
 - Try reloading the plugin
 
+### Preprocessing Errors
+
+#### Image Dimensions Too Small
+
+**Problem**: "Image dimensions are too small for the selected split configuration"
+
+**Cause**: The image is too small to split into the configured number of pages (minimum 100px per page)
+
+**Solutions**:
+- Use a higher resolution scan
+- Reduce the number of pages in your split configuration
+- Select a different configuration or "No Preprocessing"
+- Check that you selected the correct preset for your notebook type
+
+#### Split or Rotation Failed
+
+**Problem**: "Failed to split image" or "Failed to rotate image"
+
+**Cause**: The image may be corrupted or in an unsupported format
+
+**Solutions**:
+- Verify the image file is not corrupted (try opening it in an image viewer)
+- Convert the image to a standard format (JPEG or PNG)
+- Try processing without preprocessing
+- Check the developer console for detailed error messages
+
+#### Wrong Pages After Split
+
+**Problem**: Split pages are in the wrong order or orientation
+
+**Solutions**:
+- Verify you selected the correct preset (horizontal vs vertical split)
+- Check the split direction in your configuration:
+  - Horizontal: splits top to bottom
+  - Vertical: splits left to right
+- Try creating a custom configuration with different settings
+- Use the preview feature (when available) to verify settings before processing
+
+#### Pages Not Separated Correctly
+
+**Problem**: OCR still reads across both pages after splitting
+
+**Solutions**:
+- Verify preprocessing is enabled in settings
+- Check that you selected a configuration with splitting enabled
+- Ensure the split direction matches your scan orientation
+- Try adjusting the number of pages in your configuration
+- Check the console logs to verify transformations were applied
+
+#### Missing Page Numbers in Titles
+
+**Problem**: Separate notes don't have page numbers in titles
+
+**Cause**: Note mode may be set to "Combined" instead of "Separate"
+
+**Solutions**:
+- Go to Settings → Notebook OCR Plugin → Notebook Page Preprocessing
+- Under "Split Page Note Mode", select "Separate notes for each page"
+- Process the image again
+
 ## Development
 
 ### Prerequisites
@@ -593,8 +755,9 @@ The plugin is organized into several key components:
 - [x] Cloud OCR integration (OpenAI Vision, Google Cloud Vision)
 - [x] Image preprocessing (resizing, compression)
 - [x] Automatic fallback between OCR providers
+- [x] Notebook page preprocessing (split and rotate multi-page scans)
 - [ ] Batch processing UI with progress tracking
-- [ ] Advanced image preprocessing (rotation, contrast adjustment)
+- [ ] Advanced image preprocessing (perspective correction, deskewing, contrast adjustment)
 - [ ] PDF support
 - [ ] Rule templates/presets for common use cases
 - [ ] OCR result editing before processing
@@ -624,6 +787,7 @@ MIT License - see LICENSE file for details
 
 ## Additional Resources
 
+- **[Preprocessing Guide](PREPROCESSING-GUIDE.md)**: Complete guide to splitting and rotating multi-page notebook scans
 - **[Cloud OCR Setup Guide](CLOUD-OCR-SETUP.md)**: Complete guide to setting up OpenAI and Google Cloud Vision
 - **[Handwriting OCR Tips](HANDWRITING-TIPS.md)**: Comprehensive guide to improving handwriting recognition
 - **[Architecture Documentation](ARCHITECTURE.md)**: Technical deep-dive for developers

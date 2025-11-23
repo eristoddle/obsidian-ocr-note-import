@@ -5,6 +5,13 @@ import {
 	getAllDailyNotes,
 	getDailyNote as getDailyNoteFromPlugin
 } from 'obsidian-daily-notes-interface';
+import { PreprocessingConfig } from './preprocessing-types';
+import { PreprocessingConfigManager } from './preprocessing-config-manager';
+import { PreprocessingManager } from './preprocessing-manager';
+import { PreviewGenerator } from './preview-generator';
+import { PreprocessingErrorHandler } from './preprocessing-error-handler';
+import { PreprocessingSettingsUI } from './preprocessing-settings-ui';
+import { ConfigSelectionModal } from './config-selection-modal';
 
 /**
  * Platform detection helper class
@@ -303,6 +310,14 @@ interface PluginSettings {
 	// Mobile Settings
 	enableCameraCapture: boolean;
 	saveCapturesToFolder: string;
+
+	// Notebook Preprocessing Settings
+	enablePreprocessing: boolean;
+	defaultPreprocessingConfigId: string | null;
+	customPreprocessingConfigs: PreprocessingConfig[];
+	splitPageNoteMode: 'separate' | 'combined';
+	splitPageSeparator: string;
+	includePreprocessingMetadata: boolean;
 }
 
 /**
@@ -2648,7 +2663,13 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	moveProcessedImages: true,
 	processedImagesFolderPath: 'Processed',
 	enableCameraCapture: true,
-	saveCapturesToFolder: 'Captures'
+	saveCapturesToFolder: 'Captures',
+	enablePreprocessing: false,
+	defaultPreprocessingConfigId: 'preset-single-page',
+	customPreprocessingConfigs: [],
+	splitPageNoteMode: 'separate',
+	splitPageSeparator: '\n\n---\n\n',
+	includePreprocessingMetadata: false
 };
 
 /**
@@ -2662,6 +2683,11 @@ export default class NotebookOCRPlugin extends Plugin {
 	ruleEngine: RuleEngine | null = null;
 	folderMonitor: FolderMonitor | null = null;
 	settingTab: NotebookOCRSettingTab | null = null;
+
+	// Notebook preprocessing components
+	preprocessingConfigManager: PreprocessingConfigManager | null = null;
+	preprocessingManager: PreprocessingManager | null = null;
+	previewGenerator: PreviewGenerator | null = null;
 
 	/**
 	 * Called when the plugin is loaded
@@ -2711,6 +2737,12 @@ export default class NotebookOCRPlugin extends Plugin {
 		// Initialize rule engine
 		this.ruleEngine = new RuleEngine(this.settings.processingRules);
 		console.log('Rule engine initialized');
+
+		// Initialize preprocessing components
+		this.preprocessingConfigManager = new PreprocessingConfigManager();
+		this.preprocessingManager = new PreprocessingManager(this.preprocessingConfigManager);
+		this.previewGenerator = new PreviewGenerator();
+		console.log('Preprocessing components initialized');
 
 		// Initialize folder monitor
 		this.folderMonitor = new FolderMonitor(this);
@@ -2888,6 +2920,232 @@ export default class NotebookOCRPlugin extends Plugin {
 	}
 
 	/**
+	 * Process an image with preprocessing before OCR
+	 *
+	 * @param imageData - The image data as ArrayBuffer
+	 * @param fileName - The name of the image file
+	 * @param configId - Optional preprocessing configuration ID
+	 * @returns Array of OCR results for each processed page
+	 */
+	private async processImageWithPreprocessing(
+		imageData: ArrayBuffer,
+		fileName: string,
+		configId?: string
+	): Promise<OCRResult[]> {
+		// Check if preprocessing is enabled
+		if (!this.settings.enablePreprocessing || !this.preprocessingManager) {
+			// If disabled, process image directly without preprocessing
+			const ocrResult = await this.ocrService!.processImage(imageData);
+			return [ocrResult];
+		}
+
+		try {
+			// If enabled, call PreprocessingManager.preprocess()
+			const preprocessingResult = await this.preprocessingManager.preprocess(imageData, configId);
+
+			// Log preprocessing transformations to console
+			console.log(`Preprocessing transformations for ${fileName}:`, preprocessingResult.transformations);
+
+			// Process pages through OCR (subtask 9.3)
+			const ocrResults: OCRResult[] = [];
+
+			// Loop through each preprocessed page
+			for (let i = 0; i < preprocessingResult.pages.length; i++) {
+				const pageData = preprocessingResult.pages[i];
+
+				// Call OCR service for each page
+				const ocrResult = await this.ocrService!.processImage(pageData);
+
+				// Collect OCR results in array
+				ocrResults.push(ocrResult);
+			}
+
+			return ocrResults;
+		} catch (error) {
+			// Handle preprocessing errors with fallback (subtask 9.4)
+			if (error instanceof Error && error.name === 'PreprocessingError') {
+				const preprocessingError = error as any; // Cast to access PreprocessingError properties
+
+				// Call PreprocessingErrorHandler.handle()
+				PreprocessingErrorHandler.handle(preprocessingError, fileName);
+
+				// For non-config errors, offer to process without preprocessing
+				if (preprocessingError.type !== 'invalid_config') {
+					// Process original image directly as fallback
+					console.log(`Processing ${fileName} without preprocessing due to error`);
+					const ocrResult = await this.ocrService!.processImage(imageData);
+					return [ocrResult];
+				}
+			}
+
+			// Re-throw other errors
+			throw error;
+		}
+	}
+
+	/**
+	 * Create notes from preprocessed pages based on settings
+	 * Subtask 10.1: Implement createNotesFromPages method
+	 * Requirements: 8.1, 8.2
+	 */
+	private async createNotesFromPages(
+		sourceFileName: string,
+		ocrResults: OCRResult[],
+		preprocessingResult: any
+	): Promise<void> {
+		if (!this.vaultManager) {
+			throw new Error('Vault manager not initialized');
+		}
+
+		// Check splitPageNoteMode setting
+		if (this.settings.splitPageNoteMode === 'separate') {
+			// Create individual notes for each page
+			await this.createSeparateNotes(sourceFileName, ocrResults, preprocessingResult);
+		} else {
+			// Create single note with all pages
+			await this.createCombinedNote(sourceFileName, ocrResults, preprocessingResult);
+		}
+	}
+
+	/**
+	 * Create separate notes for each page
+	 * Subtask 10.2: Implement separate note creation
+	 * Requirements: 8.1, 8.3, 9.2, 9.3
+	 */
+	private async createSeparateNotes(
+		sourceFileName: string,
+		ocrResults: OCRResult[],
+		preprocessingResult: any
+	): Promise<void> {
+		if (!this.vaultManager) {
+			throw new Error('Vault manager not initialized');
+		}
+
+		// Create note for each page
+		for (let i = 0; i < ocrResults.length; i++) {
+			const pageNumber = i + 1;
+
+			// Generate page title with page number appended
+			const title = this.generatePageTitle(sourceFileName, pageNumber);
+
+			// Generate note content with OCR text
+			const content = this.generateNoteContent(ocrResults[i], preprocessingResult, pageNumber);
+
+			// Add preprocessing metadata to frontmatter if enabled
+			const frontmatter = this.generateFrontmatter(preprocessingResult, pageNumber, ocrResults.length);
+
+			// Create note for each page
+			await this.vaultManager.createNote('', title, frontmatter, content);
+		}
+	}
+
+	/**
+	 * Create combined note with all pages
+	 * Subtask 10.3: Implement combined note creation
+	 * Requirements: 8.2, 8.4, 9.2, 9.3
+	 */
+	private async createCombinedNote(
+		sourceFileName: string,
+		ocrResults: OCRResult[],
+		preprocessingResult: any
+	): Promise<void> {
+		if (!this.vaultManager) {
+			throw new Error('Vault manager not initialized');
+		}
+
+		// Generate single note title from source file
+		const title = sourceFileName;
+
+		// Combine OCR results with page separators between pages
+		const content = this.generateCombinedNoteContent(ocrResults, preprocessingResult);
+
+		// Add preprocessing metadata to frontmatter if enabled
+		const frontmatter = this.generateFrontmatter(preprocessingResult, null, ocrResults.length);
+
+		// Create single combined note
+		await this.vaultManager.createNote('', title, frontmatter, content);
+	}
+
+	/**
+	 * Generate page title with page number
+	 * Subtask 10.4: Implement note content generation helpers
+	 * Requirements: 8.3
+	 */
+	private generatePageTitle(baseName: string, pageNumber: number): string {
+		return `${baseName} - Page ${pageNumber}`;
+	}
+
+	/**
+	 * Generate note content for a single page
+	 * Subtask 10.4: Implement note content generation helpers
+	 * Requirements: 8.3, 9.2, 9.3
+	 */
+	private generateNoteContent(
+		ocrResult: OCRResult,
+		preprocessingResult: any,
+		pageNumber: number
+	): string {
+		// Return OCR text (frontmatter is handled separately)
+		return ocrResult.text;
+	}
+
+	/**
+	 * Generate combined note content with page separators
+	 * Subtask 10.4: Implement note content generation helpers
+	 * Requirements: 8.4, 9.2, 9.3
+	 */
+	private generateCombinedNoteContent(
+		ocrResults: OCRResult[],
+		preprocessingResult: any
+	): string {
+		let content = '';
+
+		// Combine all pages with separators
+		for (let i = 0; i < ocrResults.length; i++) {
+			if (i > 0) {
+				// Insert page separator between pages
+				content += this.settings.splitPageSeparator;
+			}
+			content += ocrResults[i].text;
+		}
+
+		return content;
+	}
+
+	/**
+	 * Generate frontmatter with preprocessing metadata
+	 * Subtask 10.4: Implement note content generation helpers
+	 * Requirements: 9.2, 9.3
+	 */
+	private generateFrontmatter(
+		preprocessingResult: any,
+		pageNumber: number | null,
+		totalPages: number
+	): Record<string, any> {
+		const frontmatter: Record<string, any> = {};
+
+		// Add frontmatter with preprocessing metadata when enabled
+		if (this.settings.includePreprocessingMetadata && preprocessingResult) {
+			frontmatter.preprocessing_config = preprocessingResult.config.name;
+			frontmatter.total_pages = totalPages;
+
+			if (pageNumber !== null) {
+				frontmatter.page_number = pageNumber;
+			}
+
+			if (preprocessingResult.config.split && preprocessingResult.config.split.enabled) {
+				frontmatter.split_direction = preprocessingResult.config.split.direction;
+			}
+
+			if (preprocessingResult.config.rotation && preprocessingResult.config.rotation.enabled) {
+				frontmatter.rotation_applied = true;
+			}
+		}
+
+		return frontmatter;
+	}
+
+	/**
 	 * Process selected images through the OCR pipeline
 	 */
 	private async processImages(files: File[]): Promise<void> {
@@ -2907,14 +3165,39 @@ export default class NotebookOCRPlugin extends Plugin {
 			return;
 		}
 
+		// Show configuration selection modal before processing (Subtask 14.1)
+		// Requirements: 7.1, 7.2, 7.5
+		const selectedConfigId = await new Promise<string | null>((resolve) => {
+			const modal = new ConfigSelectionModal(this.app, this, (configId) => {
+				resolve(configId);
+			});
+			modal.open();
+		});
+
 		// Show initial notice with progress
 		const totalFiles = files.length;
 		new Notice(`Starting OCR processing for ${totalFiles} image${totalFiles > 1 ? 's' : ''}...`);
 
 		let successCount = 0;
 		let errorCount = 0;
+		let totalPagesProcessed = 0;
 		const actionExecutor = new ActionExecutor(this.vaultManager);
 		const actionsSummary: string[] = [];
+
+		// Get configuration name for notification (Subtask 14.2)
+		let configName = 'No preprocessing';
+		if (selectedConfigId && this.preprocessingConfigManager) {
+			const config = this.preprocessingConfigManager.getConfig(selectedConfigId);
+			if (config) {
+				configName = config.name;
+			}
+		} else if (selectedConfigId === undefined && this.settings.enablePreprocessing && this.preprocessingConfigManager) {
+			// Use default config if no selection was made
+			const defaultConfig = this.preprocessingConfigManager.getDefaultConfig();
+			if (defaultConfig) {
+				configName = defaultConfig.name;
+			}
+		}
 
 		// Process each image
 		for (let i = 0; i < files.length; i++) {
@@ -2930,134 +3213,151 @@ export default class NotebookOCRPlugin extends Plugin {
 				// Read image file as ArrayBuffer
 				let imageData = await file.arrayBuffer();
 
-				// Preprocess images if cloud backend and preprocessing enabled
+				// Preprocess images if cloud backend and old preprocessing enabled
 				if (this.imagePreprocessor && this.settings.ocrBackend !== 'tesseract' && this.settings.enableImagePreprocessing) {
 					imageData = await this.imagePreprocessor.preprocess(imageData);
 					console.log(`Image preprocessed for ${file.name}`);
 				}
 
-				// Pass preprocessed image to OCR service
-				const ocrResult = await this.ocrService.processImage(imageData);
+				// Use new preprocessing system with selected config (Subtask 14.1)
+				// Pass selected config ID to processImageWithPreprocessing
+				// Use default config if user doesn't select one
+				const configIdToUse = selectedConfigId !== null ? selectedConfigId : undefined;
+				const ocrResults = await this.processImageWithPreprocessing(imageData, file.name, configIdToUse);
 
-				// Handle OCR errors
-				if (ocrResult.error) {
-					ErrorHandler.handleOCRError(new Error(ocrResult.error), file.name);
-					errorCount++;
-					continue;
-				}
+				// Track total pages processed for notification (Subtask 14.2)
+				totalPagesProcessed += ocrResults.length;
 
-				if (!ocrResult.text || ocrResult.text.trim().length === 0) {
-					ErrorHandler.handleOCRError(new Error('No text found in image'), file.name);
-					errorCount++;
-					continue;
-				}
+				// Process each OCR result (handle multiple pages from preprocessing)
+				for (let pageIdx = 0; pageIdx < ocrResults.length; pageIdx++) {
+					const ocrResult = ocrResults[pageIdx];
+					const pageNumber = ocrResults.length > 1 ? pageIdx + 1 : null;
 
-				// Display notification indicating which provider was used
-				const providerName = ocrResult.provider || this.settings.ocrBackend;
-				console.log(`OCR completed for ${file.name} using ${providerName}`);
+					// Handle OCR errors
+					if (ocrResult.error) {
+						const pageName = pageNumber ? `${file.name} (page ${pageNumber})` : file.name;
+						ErrorHandler.handleOCRError(new Error(ocrResult.error), pageName);
+						errorCount++;
+						continue;
+					}
 
-				// If fallback was used, show warning notification
-				if (ocrResult.fallbackUsed) {
-					new Notice(
-						`⚠️ ${providerName} OCR failed for "${file.name}". Fallback to local Tesseract was used.\n\n` +
-						`The text extraction may be less accurate. Consider checking your API key or internet connection.`,
-						8000
-					);
-				}
+					if (!ocrResult.text || ocrResult.text.trim().length === 0) {
+						const pageName = pageNumber ? `${file.name} (page ${pageNumber})` : file.name;
+						ErrorHandler.handleOCRError(new Error('No text found in image'), pageName);
+						errorCount++;
+						continue;
+					}
 
-				// Check for low-quality OCR results (likely handwriting or poor image)
-				const alphanumericCount = (ocrResult.text.match(/[a-zA-Z0-9]/g) || []).length;
-				const totalLength = ocrResult.text.length;
-				const alphanumericRatio = totalLength > 0 ? alphanumericCount / totalLength : 0;
+					// Display notification indicating which provider was used
+					const providerName = ocrResult.provider || this.settings.ocrBackend;
+					const pageName = pageNumber ? `${file.name} (page ${pageNumber})` : file.name;
+					console.log(`OCR completed for ${pageName} using ${providerName}`);
 
-				// If less than 30% alphanumeric, likely garbled
-				if (alphanumericRatio < 0.3 && totalLength > 20) {
-					console.warn(`Low quality OCR result for ${file.name}:`, {
-						confidence: ocrResult.confidence,
-						alphanumericRatio,
-						textLength: totalLength,
-						preview: ocrResult.text.substring(0, 100)
-					});
+					// If fallback was used, show warning notification
+					if (ocrResult.fallbackUsed) {
+						new Notice(
+							`⚠️ ${providerName} OCR failed for "${pageName}". Fallback to local Tesseract was used.\n\n` +
+							`The text extraction may be less accurate. Consider checking your API key or internet connection.`,
+							8000
+						);
+					}
 
-					new Notice(
-						`⚠️ OCR quality warning for "${file.name}":\n\n` +
-						`The extracted text appears garbled (${Math.round(alphanumericRatio * 100)}% readable). ` +
-						`This usually means:\n` +
-						`• The image contains handwriting (Tesseract works best with printed text)\n` +
-						`• The image quality is too low\n` +
-						`• The image doesn't contain readable text\n\n` +
-						`Tip: For handwritten notes, use clear block letters and good lighting, or wait for cloud OCR support.`,
-						10000
-					);
+					// Check for low-quality OCR results (likely handwriting or poor image)
+					const alphanumericCount = (ocrResult.text.match(/[a-zA-Z0-9]/g) || []).length;
+					const totalLength = ocrResult.text.length;
+					const alphanumericRatio = totalLength > 0 ? alphanumericCount / totalLength : 0;
 
-					errorCount++;
-					continue;
-				}
+					// If less than 30% alphanumeric, likely garbled
+					if (alphanumericRatio < 0.3 && totalLength > 20) {
+						console.warn(`Low quality OCR result for ${pageName}:`, {
+							confidence: ocrResult.confidence,
+							alphanumericRatio,
+							textLength: totalLength,
+							preview: ocrResult.text.substring(0, 100)
+						});
 
-				// Pass OCR text to rule engine for matching
-				const matches = await this.ruleEngine.matchAndExecute(ocrResult.text);
+						new Notice(
+							`⚠️ OCR quality warning for "${pageName}":\n\n` +
+							`The extracted text appears garbled (${Math.round(alphanumericRatio * 100)}% readable). ` +
+							`This usually means:\n` +
+							`• The image contains handwriting (Tesseract works best with printed text)\n` +
+							`• The image quality is too low\n` +
+							`• The image doesn't contain readable text\n\n` +
+							`Tip: For handwritten notes, use clear block letters and good lighting, or wait for cloud OCR support.`,
+							10000
+						);
 
-				if (matches.length > 0) {
-					// Execute matched rule actions via ActionExecutor
-					for (const match of matches) {
-						const results = await actionExecutor.executeActions(match);
+						errorCount++;
+						continue;
+					}
 
-						// Check if all actions succeeded
-						const allSucceeded = results.every(r => r.success);
-						if (allSucceeded) {
-							successCount++;
+					// Pass OCR text to rule engine for matching
+					const matches = await this.ruleEngine.matchAndExecute(ocrResult.text);
 
-							// Add OCR provider metadata to created notes if enabled
-							if (this.settings.includeOcrProviderMetadata) {
-								for (const result of results) {
-									if (result.action.type === 'create-note' && result.createdFile) {
-										const metadata: Record<string, any> = {};
+					if (matches.length > 0) {
+						// Execute matched rule actions via ActionExecutor
+						for (const match of matches) {
+							const results = await actionExecutor.executeActions(match);
 
-										// Add ocr_provider property
-										if (ocrResult.provider) {
-											metadata['ocr_provider'] = ocrResult.provider;
-										}
+							// Check if all actions succeeded
+							const allSucceeded = results.every(r => r.success);
+							if (allSucceeded) {
+								successCount++;
 
-										// Add ocr_fallback_used property if fallback was used
-										if (ocrResult.fallbackUsed) {
-											metadata['ocr_fallback_used'] = true;
-										}
+								// Add OCR provider metadata to created notes if enabled
+								if (this.settings.includeOcrProviderMetadata) {
+									for (const result of results) {
+										if (result.action.type === 'create-note' && result.createdFile) {
+											const metadata: Record<string, any> = {};
 
-										// Modify frontmatter if metadata exists
-										if (Object.keys(metadata).length > 0 && this.vaultManager) {
-											await this.vaultManager.modifyFrontmatter(result.createdFile, metadata, false);
+											// Add ocr_provider property
+											if (ocrResult.provider) {
+												metadata['ocr_provider'] = ocrResult.provider;
+											}
+
+											// Add ocr_fallback_used property if fallback was used
+											if (ocrResult.fallbackUsed) {
+												metadata['ocr_fallback_used'] = true;
+											}
+
+											// Modify frontmatter if metadata exists
+											if (Object.keys(metadata).length > 0 && this.vaultManager) {
+												await this.vaultManager.modifyFrontmatter(result.createdFile, metadata, false);
+											}
 										}
 									}
 								}
-							}
 
-							// Track what actions were taken
-							const actionTypes = results.map(r => {
-								if (r.action.type === 'create-note' && r.createdFile) {
-									return `created note "${r.createdFile.basename}"`;
-								}
-								return r.action.type.replace('-', ' ');
-							});
-							const providerInfo = ocrResult.provider ? ` (${ocrResult.provider})` : '';
-							actionsSummary.push(`${file.name}${providerInfo}: ${actionTypes.join(', ')}`);
-						} else {
-							errorCount++;
-							const failedActions = results.filter(r => !r.success);
-							failedActions.forEach(result => {
-								ErrorHandler.handleRuleError(
-									new Error(result.error || 'Unknown error'),
-									match.rule,
-									result.action
-								);
-							});
+								// Track what actions were taken
+								const actionTypes = results.map(r => {
+									if (r.action.type === 'create-note' && r.createdFile) {
+										return `created note "${r.createdFile.basename}"`;
+									}
+									return r.action.type.replace('-', ' ');
+								});
+								const providerInfo = ocrResult.provider ? ` (${ocrResult.provider})` : '';
+								const pageInfo = pageNumber ? ` page ${pageNumber}` : '';
+								actionsSummary.push(`${file.name}${pageInfo}${providerInfo}: ${actionTypes.join(', ')}`);
+							} else {
+								errorCount++;
+								const failedActions = results.filter(r => !r.success);
+								failedActions.forEach(result => {
+									ErrorHandler.handleRuleError(
+										new Error(result.error || 'Unknown error'),
+										match.rule,
+										result.action
+									);
+								});
+							}
 						}
+					} else {
+						// Apply default action if no rules match
+						await this.applyDefaultAction(ocrResult.text, pageName);
+						successCount++;
+						const providerInfo = ocrResult.provider ? ` (${ocrResult.provider})` : '';
+						const pageInfo = pageNumber ? ` page ${pageNumber}` : '';
+						actionsSummary.push(`${file.name}${pageInfo}${providerInfo}: applied default action`);
 					}
-				} else {
-					// Apply default action if no rules match
-					await this.applyDefaultAction(ocrResult.text, file.name);
-					successCount++;
-					const providerInfo = ocrResult.provider ? ` (${ocrResult.provider})` : '';
-					actionsSummary.push(`${file.name}${providerInfo}: applied default action`);
 				}
 
 			} catch (error) {
@@ -3071,6 +3371,8 @@ export default class NotebookOCRPlugin extends Plugin {
 		}
 
 		// Display success notification with summary of actions taken
+		// Subtask 14.2: Add completion notification with configuration name and page count
+		// Requirements: 9.1, 9.5
 		if (successCount > 0 || errorCount > 0) {
 			const summaryParts = [];
 			if (successCount > 0) {
@@ -3080,7 +3382,16 @@ export default class NotebookOCRPlugin extends Plugin {
 				summaryParts.push(`✗ ${errorCount} failed`);
 			}
 
+			// Display notification with configuration name used (Subtask 14.2)
 			let summaryMessage = `Image processing complete: ${summaryParts.join(', ')}`;
+
+			// Include configuration name in notification
+			summaryMessage += `\n\nPreprocessing: ${configName}`;
+
+			// Include number of pages processed (Subtask 14.2)
+			if (totalPagesProcessed > totalFiles) {
+				summaryMessage += `\nPages processed: ${totalPagesProcessed} (from ${totalFiles} image${totalFiles > 1 ? 's' : ''})`;
+			}
 
 			// Add details about actions taken (limit to first 3 for brevity)
 			if (actionsSummary.length > 0 && actionsSummary.length <= 3) {
@@ -4858,6 +5169,19 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 						}));
 			}
 		}
+
+		// Notebook Preprocessing Settings
+		containerEl.createEl('h3', { text: 'Notebook Preprocessing' });
+
+		const preprocessingHelpDiv = containerEl.createDiv({ cls: 'setting-item-description' });
+		preprocessingHelpDiv.style.marginBottom = '15px';
+		preprocessingHelpDiv.innerHTML = `
+			Automatically split and rotate multi-page notebook scans before OCR processing. Perfect for pocket notebooks scanned side-by-side or A5 notebooks that need rotation.
+		`;
+
+		// Use PreprocessingSettingsUI to render preprocessing settings
+		const preprocessingUI = new PreprocessingSettingsUI(this.app, this.plugin);
+		preprocessingUI.display(containerEl);
 
 		// Mobile Settings (conditionally shown only on mobile platform)
 		if (PlatformHelper.isMobile()) {
