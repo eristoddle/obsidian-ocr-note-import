@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Set up core preview infrastructure
+- [x] 1. Set up core preview infrastructure
   - Create split-calculator.ts with SplitCalculator class
   - Implement calculateDefaultPositions() method for calculating split positions from config
   - Implement calculatePageRegions() method for determining page boundaries
@@ -8,15 +8,15 @@
   - Implement findClosestSplitLine() method for interaction handling
   - _Requirements: 1.1, 3.1, 3.3_
 
-- [ ] 1.1 Write property test for split position calculation
+- [x] 1.1 Write property test for split position calculation
   - **Property 1: Preview modal displays for split-enabled configurations**
   - **Validates: Requirements 1.1**
 
-- [ ] 1.2 Write property test for split position validation
+- [x] 1.2 Write property test for split position validation
   - **Property 11: Invalid split positions are rejected**
   - **Validates: Requirements 3.3**
 
-- [ ] 2. Implement preview rendering engine
+- [x] 2. Implement preview rendering engine
   - Create preview-renderer.ts with PreviewRenderer class
   - Implement render() method as main entry point for rendering
   - Implement drawImage() method for rendering the source image
@@ -26,57 +26,57 @@
   - Implement calculateScale() method for fitting image in canvas
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 6.4_
 
-- [ ] 2.1 Write property test for vertical split line rendering
+- [x] 2.1 Write property test for vertical split line rendering
   - **Property 2: Vertical split lines are rendered correctly**
   - **Validates: Requirements 1.2**
 
-- [ ] 2.2 Write property test for horizontal split line rendering
+- [x] 2.2 Write property test for horizontal split line rendering
   - **Property 3: Horizontal split lines are rendered correctly**
   - **Validates: Requirements 1.3**
 
-- [ ] 2.3 Write property test for page label rendering
+- [x] 2.3 Write property test for page label rendering
   - **Property 4: Page regions are labeled with page numbers**
   - **Validates: Requirements 1.4**
 
-- [ ] 2.4 Write property test for aspect ratio preservation
+- [x] 2.4 Write property test for aspect ratio preservation
   - **Property 5: Image scaling preserves aspect ratio**
   - **Validates: Requirements 1.5**
 
-- [ ] 2.5 Write property test for page region visual separation
+- [x] 2.5 Write property test for page region visual separation
   - **Property 21: Page regions use distinct visual separation**
   - **Validates: Requirements 6.4**
 
-- [ ] 3. Add rotation indicator rendering
+- [x] 3. Add rotation indicator rendering
   - Implement drawRotationIndicators() method in PreviewRenderer
   - Handle before-split rotation (whole image indicator)
   - Handle after-split rotation (per-page indicators)
   - Format rotation indicators with angle and directional symbol
   - _Requirements: 2.1, 2.2, 2.4_
 
-- [ ] 3.1 Write property test for before-split rotation indicators
+- [x] 3.1 Write property test for before-split rotation indicators
   - **Property 6: Before-split rotation is indicated**
   - **Validates: Requirements 2.1**
 
-- [ ] 3.2 Write property test for after-split rotation indicators
+- [x] 3.2 Write property test for after-split rotation indicators
   - **Property 7: After-split rotation indicators are displayed per page**
   - **Validates: Requirements 2.2**
 
-- [ ] 3.3 Write property test for rotation indicator format
+- [x] 3.3 Write property test for rotation indicator format
   - **Property 8: Rotation indicator format includes angle and direction**
   - **Validates: Requirements 2.4**
 
-- [ ] 4. Implement transformation summary rendering
+- [x] 4. Implement transformation summary rendering
   - Implement drawTransformationSummary() method in PreviewRenderer
   - Generate transformation list from config (rotation, split operations)
   - Number transformations in execution order
   - Handle edge case: no transformations configured
   - _Requirements: 6.1, 6.2_
 
-- [ ] 4.1 Write property test for transformation summary
+- [x] 4.1 Write property test for transformation summary
   - **Property 20: Transformation summary displays with numbering**
   - **Validates: Requirements 6.1, 6.2**
 
-- [ ] 5. Create preprocessing preview modal
+- [x] 5. Create preprocessing preview modal
   - Create preprocessing-preview-modal.ts with PreprocessingPreviewModal class
   - Extend Obsidian Modal class
   - Implement constructor accepting PreviewModalOptions
@@ -92,19 +92,19 @@
   - Display loading indicator during image preparation
   - _Requirements: 7.1, 7.2, 7.3, 7.5_
 
-- [ ] 6.1 Write property test for image downscaling
+- [x] 6.1 Write property test for image downscaling
   - **Property 23: Large images are downscaled for preview**
   - **Validates: Requirements 7.1**
 
-- [ ] 6.2 Write property test for downscaling aspect ratio preservation
+- [x] 6.2 Write property test for downscaling aspect ratio preservation
   - **Property 24: Downscaling preserves aspect ratio**
   - **Validates: Requirements 7.2**
 
-- [ ] 6.3 Write property test for loading indicator display
+- [x] 6.3 Write property test for loading indicator display
   - **Property 25: Loading indicator displays during preparation**
   - **Validates: Requirements 7.3**
 
-- [ ] 6.4 Write property test for full-resolution processing
+- [x] 6.4 Write property test for full-resolution processing
   - **Property 26: Processing uses full-resolution image**
   - **Validates: Requirements 7.5**
 

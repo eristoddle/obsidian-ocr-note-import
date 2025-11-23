@@ -46,6 +46,7 @@ export interface SplitConfig {
     enabled: boolean;
     direction: SplitDirection;
     pageCount: number;  // 2, 3, or 4
+    customPositions?: number[];  // Custom split positions in pixels
 }
 
 /**

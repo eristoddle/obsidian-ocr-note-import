@@ -6,4 +6,9 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['**/*.test.ts'],
   },
+  resolve: {
+    alias: {
+      obsidian: new URL('./test-mocks/obsidian.ts', import.meta.url).pathname,
+    },
+  },
 });
