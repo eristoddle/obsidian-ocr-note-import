@@ -1,6 +1,6 @@
 {
   "name": "obsidian-notebook-ocr",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "Process handwritten field notebook images using OCR and intelligently import extracted text into Obsidian notes",
   "main": "main.js",
   "scripts": {
