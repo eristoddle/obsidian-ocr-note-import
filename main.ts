@@ -318,6 +318,7 @@ interface PluginSettings {
 	splitPageNoteMode: 'separate' | 'combined';
 	splitPageSeparator: string;
 	includePreprocessingMetadata: boolean;
+	removeLineBreaks: boolean;
 }
 
 /**
@@ -2462,6 +2463,11 @@ class FolderMonitor {
 		const providerName = ocrResult.provider || this.plugin.settings.ocrBackend;
 		console.log(`OCR completed for ${imageFile.name} using ${providerName}`);
 
+		// Remove line breaks if enabled
+		if (this.plugin.settings.removeLineBreaks) {
+			ocrResult.text = this.plugin.removeLineBreaks(ocrResult.text);
+		}
+
 		// If fallback was used, show warning notification
 		if (ocrResult.fallbackUsed) {
 			new Notice(
@@ -2669,7 +2675,8 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	customPreprocessingConfigs: [],
 	splitPageNoteMode: 'separate',
 	splitPageSeparator: '\n\n---\n\n',
-	includePreprocessingMetadata: false
+	includePreprocessingMetadata: false,
+	removeLineBreaks: false
 };
 
 /**
@@ -3147,6 +3154,14 @@ export default class NotebookOCRPlugin extends Plugin {
 	}
 
 	/**
+	 * Remove line breaks from text
+	 */
+	removeLineBreaks(text: string): string {
+		// Replace single newlines with space, preserve double newlines (paragraphs)
+		return text.replace(/([^\n])\n([^\n])/g, '$1 $2');
+	}
+
+	/**
 	 * Process selected images through the OCR pipeline
 	 */
 	private async processImages(files: File[]): Promise<void> {
@@ -3275,6 +3290,11 @@ export default class NotebookOCRPlugin extends Plugin {
 					const providerName = ocrResult.provider || this.settings.ocrBackend;
 					const pageName = pageNumber ? `${file.name} (page ${pageNumber})` : file.name;
 					console.log(`OCR completed for ${pageName} using ${providerName}`);
+
+					// Remove line breaks if enabled
+					if (this.settings.removeLineBreaks) {
+						ocrResult.text = this.removeLineBreaks(ocrResult.text);
+					}
 
 					// If fallback was used, show warning notification
 					if (ocrResult.fallbackUsed) {
@@ -5092,6 +5112,16 @@ class NotebookOCRSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.noteSeparatorPattern)
 				.onChange(async (value) => {
 					this.plugin.settings.noteSeparatorPattern = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Remove Line Breaks')
+			.setDesc('Remove single line breaks from OCR text (preserves paragraphs). Useful for fixing hard-wrapped text.')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.removeLineBreaks)
+				.onChange(async (value) => {
+					this.plugin.settings.removeLineBreaks = value;
 					await this.plugin.saveSettings();
 				}));
 
