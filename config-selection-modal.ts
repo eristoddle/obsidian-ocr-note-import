@@ -64,7 +64,7 @@ export class ConfigSelectionModal extends Modal {
 		// No preprocessing option
 		new Setting(contentEl)
 			.setName('No Preprocessing')
-			.setDesc('Process image without splitting or rotation')
+			.setDesc('Process the image without any transformations (no splitting or rotation)')
 			.addButton(button => button
 				.setButtonText('Select')
 				.onClick(() => {
@@ -83,6 +83,12 @@ export class ConfigSelectionModal extends Modal {
 				const setting = new Setting(contentEl)
 					.setName(name)
 					.setDesc(config.description || 'No description');
+
+				// Apply bold styling to default configuration
+				if (isDefault) {
+					const nameEl = setting.nameEl;
+					nameEl.style.fontWeight = 'bold';
+				}
 
 				// Add Preview button if image data is available
 				if (this.imageData) {

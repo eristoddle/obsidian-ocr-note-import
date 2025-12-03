@@ -338,4 +338,114 @@ describe('PreprocessingConfigManager', () => {
             { numRuns: 100 }
         );
     });
+
+    describe('Preset ID Migration', () => {
+        /**
+         * Test migration from preset-pocket-side-by-side to preset-split-vertically
+         */
+        it('should migrate preset-pocket-side-by-side to preset-split-vertically', () => {
+            const oldId = 'preset-pocket-side-by-side';
+            const expectedNewId = PRESET_CONFIGS[NotebookPreset.SPLIT_VERTICALLY].id;
+
+            const migratedId = manager.migratePresetId(oldId);
+
+            expect(migratedId).toBe(expectedNewId);
+        });
+
+        /**
+         * Test migration from preset-a5-landscape to preset-rotate-90-clockwise
+         */
+        it('should migrate preset-a5-landscape to preset-rotate-90-clockwise', () => {
+            const oldId = 'preset-a5-landscape';
+            const expectedNewId = PRESET_CONFIGS[NotebookPreset.ROTATE_90_CLOCKWISE].id;
+
+            const migratedId = manager.migratePresetId(oldId);
+
+            expect(migratedId).toBe(expectedNewId);
+        });
+
+        /**
+         * Test removal of preset-single-page (maps to no-preprocessing)
+         */
+        it('should migrate preset-single-page to preset-no-preprocessing', () => {
+            const oldId = 'preset-single-page';
+            const expectedNewId = PRESET_CONFIGS[NotebookPreset.NO_PREPROCESSING].id;
+
+            const migratedId = manager.migratePresetId(oldId);
+
+            expect(migratedId).toBe(expectedNewId);
+        });
+
+        /**
+         * Test removal of preset-a5-portrait (maps to no-preprocessing)
+         */
+        it('should migrate preset-a5-portrait to preset-no-preprocessing', () => {
+            const oldId = 'preset-a5-portrait';
+            const expectedNewId = PRESET_CONFIGS[NotebookPreset.NO_PREPROCESSING].id;
+
+            const migratedId = manager.migratePresetId(oldId);
+
+            expect(migratedId).toBe(expectedNewId);
+        });
+
+        /**
+         * Test fallback to default when no mapping exists
+         */
+        it('should fallback to default preset when no mapping exists', () => {
+            const unknownId = 'preset-unknown-old-preset';
+            const expectedDefaultId = PRESET_CONFIGS[NotebookPreset.SPLIT_VERTICALLY].id;
+
+            const migratedId = manager.migratePresetId(unknownId);
+
+            expect(migratedId).toBe(expectedDefaultId);
+        });
+
+        /**
+         * Test that current preset IDs are not changed
+         */
+        it('should not change current preset IDs', () => {
+            const currentId = PRESET_CONFIGS[NotebookPreset.TOP_SPIRAL_NOTEBOOK].id;
+
+            const migratedId = manager.migratePresetId(currentId);
+
+            expect(migratedId).toBe(currentId);
+        });
+
+        /**
+         * Test setDefaultConfigWithMigration with old preset ID
+         */
+        it('should migrate and set default config with old preset ID', () => {
+            const oldId = 'preset-pocket-side-by-side';
+            const expectedNewId = PRESET_CONFIGS[NotebookPreset.SPLIT_VERTICALLY].id;
+
+            const resultId = manager.setDefaultConfigWithMigration(oldId);
+
+            expect(resultId).toBe(expectedNewId);
+            expect(manager.getDefaultConfig()?.id).toBe(expectedNewId);
+        });
+
+        /**
+         * Test setDefaultConfigWithMigration with null
+         */
+        it('should use default preset when null is provided', () => {
+            const expectedDefaultId = PRESET_CONFIGS[NotebookPreset.SPLIT_VERTICALLY].id;
+
+            const resultId = manager.setDefaultConfigWithMigration(null);
+
+            expect(resultId).toBe(expectedDefaultId);
+            expect(manager.getDefaultConfig()?.id).toBe(expectedDefaultId);
+        });
+
+        /**
+         * Test setDefaultConfigWithMigration with current preset ID
+         */
+        it('should not change current preset IDs when setting default', () => {
+            const currentId = PRESET_CONFIGS[NotebookPreset.ROTATE_90_COUNTERCLOCKWISE].id;
+
+            const resultId = manager.setDefaultConfigWithMigration(currentId);
+
+            expect(resultId).toBe(currentId);
+            expect(manager.getDefaultConfig()?.id).toBe(currentId);
+        });
+    });
 });

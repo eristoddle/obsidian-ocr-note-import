@@ -65,11 +65,42 @@ export class PreprocessingSettingsUI {
 
 		// Show preprocessing settings only if enabled
 		if (this.plugin.settings.enablePreprocessing) {
+			this.displayCenteringGuidance(containerEl);
 			this.displayDefaultConfigSelection(containerEl);
 			this.displayPresetConfigurations(containerEl);
 			this.displayCustomConfigurations(containerEl);
 			this.displayNoteCreationSettings(containerEl);
 		}
+	}
+
+	/**
+	 * Display centering guidance tip
+	 */
+	private displayCenteringGuidance(containerEl: HTMLElement): void {
+		const tipDiv = containerEl.createDiv({ cls: 'notebook-ocr-centering-tip' });
+		tipDiv.style.padding = '12px 15px';
+		tipDiv.style.backgroundColor = 'var(--background-secondary)';
+		tipDiv.style.borderRadius = '5px';
+		tipDiv.style.marginBottom = '20px';
+		tipDiv.style.border = '1px solid var(--background-modifier-border)';
+		tipDiv.style.display = 'flex';
+		tipDiv.style.alignItems = 'flex-start';
+		tipDiv.style.gap = '10px';
+
+		// Icon
+		const iconSpan = tipDiv.createSpan();
+		iconSpan.textContent = '💡';
+		iconSpan.style.fontSize = '1.2em';
+		iconSpan.style.flexShrink = '0';
+
+		// Text content
+		const textDiv = tipDiv.createDiv();
+		const titleSpan = textDiv.createSpan();
+		titleSpan.textContent = 'Tip: ';
+		titleSpan.style.fontWeight = '600';
+
+		const contentSpan = textDiv.createSpan();
+		contentSpan.textContent = 'For best results, center your notebook on the scanner or camera. This ensures accurate splitting and reduces the need for manual adjustments.';
 	}
 
 	/**
@@ -118,12 +149,12 @@ export class PreprocessingSettingsUI {
 			Predefined configurations for common notebook formats. These presets cannot be edited or deleted.
 		`;
 
-		// Display each preset
+		// Display each preset (excluding NO_PREPROCESSING and CUSTOM)
 		const presetKeys = [
-			NotebookPreset.SINGLE_PAGE,
-			NotebookPreset.POCKET_SIDE_BY_SIDE,
-			NotebookPreset.A5_PORTRAIT,
-			NotebookPreset.A5_LANDSCAPE
+			NotebookPreset.SPLIT_VERTICALLY,
+			NotebookPreset.ROTATE_90_CLOCKWISE,
+			NotebookPreset.ROTATE_90_COUNTERCLOCKWISE,
+			NotebookPreset.TOP_SPIRAL_NOTEBOOK
 		];
 
 		presetKeys.forEach(presetKey => {

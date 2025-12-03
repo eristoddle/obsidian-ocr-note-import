@@ -50,15 +50,43 @@ export class PreprocessingConfigManager {
 
     /**
      * Initialize with predefined presets
-     * Loads all preset configurations and sets single-page as the default
+     * Loads all preset configurations and sets split-vertically as the default
      * @private
      */
     private initializePresets(): void {
         Object.values(PRESET_CONFIGS).forEach(config => {
             this.configs.set(config.id, config);
         });
-        // Set single-page as default
-        this.defaultConfigId = PRESET_CONFIGS[NotebookPreset.SINGLE_PAGE].id;
+        // Set split-vertically as default
+        this.defaultConfigId = PRESET_CONFIGS[NotebookPreset.SPLIT_VERTICALLY].id;
+    }
+
+    /**
+     * Migrate old preset IDs to new preset IDs
+     * Maps deprecated preset IDs to their new equivalents
+     * @param oldId - The old preset ID to migrate
+     * @returns The new preset ID, or default if no mapping exists
+     */
+    migratePresetId(oldId: string): string {
+        const migrationMap: Record<string, string> = {
+            'preset-single-page': PRESET_CONFIGS[NotebookPreset.NO_PREPROCESSING].id,
+            'preset-pocket-side-by-side': PRESET_CONFIGS[NotebookPreset.SPLIT_VERTICALLY].id,
+            'preset-a5-portrait': PRESET_CONFIGS[NotebookPreset.NO_PREPROCESSING].id,
+            'preset-a5-landscape': PRESET_CONFIGS[NotebookPreset.ROTATE_90_CLOCKWISE].id
+        };
+
+        // If the old ID has a mapping, return the new ID
+        if (migrationMap[oldId]) {
+            return migrationMap[oldId];
+        }
+
+        // If the ID already exists in current configs, return it unchanged
+        if (this.configs.has(oldId)) {
+            return oldId;
+        }
+
+        // Otherwise, return the default preset
+        return PRESET_CONFIGS[NotebookPreset.SPLIT_VERTICALLY].id;
     }
 
     /**
@@ -97,6 +125,28 @@ export class PreprocessingConfigManager {
         if (this.configs.has(id)) {
             this.defaultConfigId = id;
         }
+    }
+
+    /**
+     * Set default configuration with automatic migration
+     * Migrates old preset IDs to new ones before setting as default
+     * @param id - The ID of the configuration to set as default (may be old preset ID)
+     * @returns The migrated ID that was set as default
+     */
+    setDefaultConfigWithMigration(id: string | null): string {
+        if (!id) {
+            // If no ID provided, use the default
+            this.defaultConfigId = PRESET_CONFIGS[NotebookPreset.SPLIT_VERTICALLY].id;
+            return this.defaultConfigId;
+        }
+
+        // Migrate the ID if it's an old preset
+        const migratedId = this.migratePresetId(id);
+
+        // Set the migrated ID as default
+        this.setDefaultConfig(migratedId);
+
+        return migratedId;
     }
 
     /**

@@ -60,9 +60,9 @@ describe('PreprocessingManager', () => {
         await fc.assert(
             fc.asyncProperty(
                 fc.constantFrom(
-                    NotebookPreset.SINGLE_PAGE,          // No transformations
-                    NotebookPreset.POCKET_SIDE_BY_SIDE,  // Has split (but we'll test with disabled)
-                    NotebookPreset.A5_LANDSCAPE          // Has rotation (but we'll test with disabled)
+                    NotebookPreset.NO_PREPROCESSING,           // No transformations
+                    NotebookPreset.SPLIT_VERTICALLY,           // Has split (but we'll test with disabled)
+                    NotebookPreset.ROTATE_90_CLOCKWISE         // Has rotation (but we'll test with disabled)
                 ),
                 async (preset) => {
                     // Create a custom config based on the preset but with transformations disabled

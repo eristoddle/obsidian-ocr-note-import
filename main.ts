@@ -2671,7 +2671,7 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	enableCameraCapture: true,
 	saveCapturesToFolder: 'Captures',
 	enablePreprocessing: false,
-	defaultPreprocessingConfigId: 'preset-single-page',
+	defaultPreprocessingConfigId: 'preset-split-vertically',
 	customPreprocessingConfigs: [],
 	splitPageNoteMode: 'separate',
 	splitPageSeparator: '\n\n---\n\n',
@@ -2750,6 +2750,19 @@ export default class NotebookOCRPlugin extends Plugin {
 		this.preprocessingManager = new PreprocessingManager(this.preprocessingConfigManager);
 		this.previewGenerator = new PreviewGenerator();
 		console.log('Preprocessing components initialized');
+
+		// Migrate old preset IDs to new ones
+		const originalDefaultId = this.settings.defaultPreprocessingConfigId;
+		const migratedDefaultId = this.preprocessingConfigManager.setDefaultConfigWithMigration(
+			this.settings.defaultPreprocessingConfigId
+		);
+
+		// If the ID was migrated, update settings and save
+		if (originalDefaultId !== migratedDefaultId) {
+			this.settings.defaultPreprocessingConfigId = migratedDefaultId;
+			await this.saveSettings();
+			console.log(`Migrated default preprocessing config from ${originalDefaultId} to ${migratedDefaultId}`);
+		}
 
 		// Initialize folder monitor
 		this.folderMonitor = new FolderMonitor(this);

@@ -6,10 +6,11 @@
  * Notebook type preset enumeration
  */
 export enum NotebookPreset {
-    SINGLE_PAGE = 'single-page',
-    POCKET_SIDE_BY_SIDE = 'pocket-side-by-side',
-    A5_PORTRAIT = 'a5-portrait',
-    A5_LANDSCAPE = 'a5-landscape',
+    NO_PREPROCESSING = 'no-preprocessing',
+    SPLIT_VERTICALLY = 'split-vertically',
+    ROTATE_90_CLOCKWISE = 'rotate-90-clockwise',
+    ROTATE_90_COUNTERCLOCKWISE = 'rotate-90-counterclockwise',
+    TOP_SPIRAL_NOTEBOOK = 'top-spiral-notebook',
     CUSTOM = 'custom'
 }
 
@@ -93,11 +94,11 @@ export interface PreviewThumbnail {
  * Predefined preset configurations
  */
 export const PRESET_CONFIGS: Record<NotebookPreset, PreprocessingConfig> = {
-    [NotebookPreset.SINGLE_PAGE]: {
-        id: 'preset-single-page',
-        name: 'Single Page (8.5x11)',
-        description: 'Standard single-page notebook scan, no splitting needed',
-        preset: NotebookPreset.SINGLE_PAGE,
+    [NotebookPreset.NO_PREPROCESSING]: {
+        id: 'preset-no-preprocessing',
+        name: 'No Preprocessing',
+        description: 'Process image without any transformations',
+        preset: NotebookPreset.NO_PREPROCESSING,
         split: {
             enabled: false,
             direction: SplitDirection.HORIZONTAL,
@@ -108,11 +109,11 @@ export const PRESET_CONFIGS: Record<NotebookPreset, PreprocessingConfig> = {
             timing: RotationTiming.BEFORE_SPLIT
         }
     },
-    [NotebookPreset.POCKET_SIDE_BY_SIDE]: {
-        id: 'preset-pocket-side-by-side',
-        name: 'Pocket Notebooks Side-by-Side (3.5x5.5)',
-        description: 'Two pocket notebook pages scanned horizontally side-by-side',
-        preset: NotebookPreset.POCKET_SIDE_BY_SIDE,
+    [NotebookPreset.SPLIT_VERTICALLY]: {
+        id: 'preset-split-vertically',
+        name: 'Split Vertically',
+        description: 'Split image into two pages side-by-side (left and right)',
+        preset: NotebookPreset.SPLIT_VERTICALLY,
         split: {
             enabled: true,
             direction: SplitDirection.VERTICAL,
@@ -123,26 +124,11 @@ export const PRESET_CONFIGS: Record<NotebookPreset, PreprocessingConfig> = {
             timing: RotationTiming.AFTER_SPLIT
         }
     },
-    [NotebookPreset.A5_PORTRAIT]: {
-        id: 'preset-a5-portrait',
-        name: 'A5 Portrait',
-        description: 'A5 notebook scanned in portrait orientation',
-        preset: NotebookPreset.A5_PORTRAIT,
-        split: {
-            enabled: false,
-            direction: SplitDirection.HORIZONTAL,
-            pageCount: 1
-        },
-        rotation: {
-            enabled: false,
-            timing: RotationTiming.BEFORE_SPLIT
-        }
-    },
-    [NotebookPreset.A5_LANDSCAPE]: {
-        id: 'preset-a5-landscape',
-        name: 'A5 Landscape (needs rotation)',
-        description: 'A5 notebook scanned in landscape, rotated to portrait',
-        preset: NotebookPreset.A5_LANDSCAPE,
+    [NotebookPreset.ROTATE_90_CLOCKWISE]: {
+        id: 'preset-rotate-90-clockwise',
+        name: 'Rotate 90° Clockwise',
+        description: 'Rotate entire image 90 degrees clockwise',
+        preset: NotebookPreset.ROTATE_90_CLOCKWISE,
         split: {
             enabled: false,
             direction: SplitDirection.HORIZONTAL,
@@ -152,6 +138,38 @@ export const PRESET_CONFIGS: Record<NotebookPreset, PreprocessingConfig> = {
             enabled: true,
             timing: RotationTiming.BEFORE_SPLIT,
             wholeImageAngle: RotationAngle.CLOCKWISE_90
+        }
+    },
+    [NotebookPreset.ROTATE_90_COUNTERCLOCKWISE]: {
+        id: 'preset-rotate-90-counterclockwise',
+        name: 'Rotate 90° Counterclockwise',
+        description: 'Rotate entire image 90 degrees counterclockwise',
+        preset: NotebookPreset.ROTATE_90_COUNTERCLOCKWISE,
+        split: {
+            enabled: false,
+            direction: SplitDirection.HORIZONTAL,
+            pageCount: 1
+        },
+        rotation: {
+            enabled: true,
+            timing: RotationTiming.BEFORE_SPLIT,
+            wholeImageAngle: RotationAngle.CLOCKWISE_270
+        }
+    },
+    [NotebookPreset.TOP_SPIRAL_NOTEBOOK]: {
+        id: 'preset-top-spiral-notebook',
+        name: 'Top Spiral Notebook',
+        description: 'Split horizontally and rotate top page 180° (for top-spiral notebooks)',
+        preset: NotebookPreset.TOP_SPIRAL_NOTEBOOK,
+        split: {
+            enabled: true,
+            direction: SplitDirection.HORIZONTAL,
+            pageCount: 2
+        },
+        rotation: {
+            enabled: true,
+            timing: RotationTiming.AFTER_SPLIT,
+            perPageAngles: [RotationAngle.CLOCKWISE_180, RotationAngle.NONE]
         }
     },
     [NotebookPreset.CUSTOM]: {

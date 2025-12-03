@@ -113,7 +113,7 @@ describe('PreviewGenerator', () => {
                 id: 'test-config',
                 name: 'Test Config',
                 description: 'Test',
-                preset: NotebookPreset.SINGLE_PAGE,
+                preset: NotebookPreset.NO_PREPROCESSING,
                 split: {
                     enabled: false,
                     direction: SplitDirection.HORIZONTAL,
